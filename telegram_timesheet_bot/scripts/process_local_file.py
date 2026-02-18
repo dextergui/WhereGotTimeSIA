@@ -20,27 +20,57 @@ sys.path.insert(0, str(ROOT))
 from dotenv import load_dotenv
 load_dotenv()
 
-from app import ocr, sheets
+from app import ocr, sheets, service
 
 
-def build_reply(parsed, chat_id=None):
-    name = parsed.get("name") or "(unknown)"
-    month = parsed.get("month") or "(unknown)"
-    entries = parsed.get("entries") or []
-    lines = [f"Timesheet parsed for: {name}", f"Period: {month}", "Entries:"]
-    lines += entries[:20]
-    return "\n".join(lines)
+# def build_reply(parsed, chat_id=None):
+#     name = parsed.get("name") or "(unknown)"
+#     month = parsed.get("month") or "(unknown)"
+#     entries = parsed.get("entries") or []
+
+#     lines = [
+#         f"Timesheet parsed for: {name}",
+#         f"Period: {month}",
+#         "Entries:"
+#     ]
+
+#     for e in entries[:20]:
+#         lines.append(
+#             f"{e.get('start_date')} | {e.get('sector')} | {e.get('duty_type')} | {e.get('flight_time')}"
+#         )
+
+#     return "\n".join(lines)
 
 
-def build_sheet_row(parsed, chat_id=None):
-    import time
-    ts = time.strftime("%Y-%m-%d %H:%M:%S")
-    name = parsed.get("name") or ""
-    month = parsed.get("month") or ""
-    entries = parsed.get("entries") or []
-    raw = parsed.get("raw_text") or ""
-    row = [ts, str(chat_id or "local"), name, month, " | ".join(entries[:50]), raw[:2000]]
-    return row
+# def build_sheet_row(parsed, chat_id=None):
+#     import time
+
+#     ts = time.strftime("%Y-%m-%d %H:%M:%S")
+#     name = parsed.get("name") or ""
+#     month = parsed.get("month") or ""
+#     entries = parsed.get("entries") or []
+#     raw = parsed.get("raw_text") or ""
+
+#     # Convert dict entries into short string summaries
+#     entry_strings = []
+#     for e in entries[:50]:
+#         entry_strings.append(
+#             f"{e.get('start_date')} "
+#             f"{e.get('flight_number') or ''} "
+#             f"{e.get('sector') or ''} "
+#             f"{e.get('duty_type') or ''}"
+#         )
+
+#     row = [
+#         ts,
+#         str(chat_id or "local"),
+#         name,
+#         month,
+#         " | ".join(entry_strings),
+#         raw[:2000]
+#     ]
+
+#     return row
 
 
 def main():
@@ -48,6 +78,7 @@ def main():
     p.add_argument("file", help="Path to image or PDF")
     p.add_argument("--chat", type=int, help="Chat id to include in row/reply")
     p.add_argument("--append", action="store_true", help="Actually append to Google Sheet (requires SHEET_ID + creds)")
+    p.add_argument("--mock", help="Path to raw OCR text file (skip Vision API)")
     args = p.parse_args()
 
     path = args.file
@@ -55,15 +86,24 @@ def main():
         print("File not found:", path)
         sys.exit(1)
 
-    with open(path, "rb") as f:
-        data = f.read()
-
-    parsed = ocr.extract_text_from_file(data, filename=path)
+    if args.mock:
+        print("Using mock OCR text from:", args.mock)
+        with open(args.mock, "r", encoding="utf-8") as f:
+            extracted_text = f.read()
+    else:
+        with open(path, "rb") as f:
+            data = f.read()
+        extracted_text = ocr.extract_text_from_file(data, filename=path)
+        
+    # print("=== RAW OCR TEXT ===")
+    # print(parsed_text)
+    # print("====================")
     # If extract_text_from_file returns text, we need to parse
-    parsed = ocr.parse_timesheet(parsed)
+    parsed = service.parse_timesheet(extracted_text)
+    trips = service.group_trips(parsed["entries"])
 
-    reply = build_reply(parsed, chat_id=args.chat)
-    row = build_sheet_row(parsed, chat_id=args.chat)
+    reply = service.trips_to_message(trips)
+    row = service.trips_to_sheet_rows(trips)
 
     print("--- Reply message ---")
     print(reply)
