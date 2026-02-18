@@ -5,7 +5,7 @@ import time
 import logging
 from fastapi import FastAPI, Request, HTTPException
 
-from . import config, telegram_bot, ocr, sheets
+from . import config, telegram_bot, ocr, sheets, service
 
 app = FastAPI()
 logger = logging.getLogger("uvicorn.error")
@@ -53,29 +53,24 @@ async def telegram_webhook(webhook_path: str, request: Request):
             return {"ok": False}
 
         # OCR and parse
-        text = ocr.extract_text_from_file(file_bytes, filename)
-        parsed = ocr.parse_timesheet(text)
+        extracted_text = ocr.extract_text_from_file(file_bytes, filename)
+        parsed = service.parse_timesheet(extracted_text)
+        trips = service.group_trips(parsed["entries"])
 
         # Build reply
-        name = parsed.get("name") or "(unknown)"
-        month = parsed.get("month") or "(unknown)"
-        entries = parsed.get("entries") or []
-
-        reply_lines = [f"Timesheet parsed for: {name}", f"Period: {month}", "Entries:"]
-        reply_lines += entries[:20]
-        reply_text = "\n".join(reply_lines)
+        reply_text = service.trips_to_message(trips)
 
         telegram_bot.send_message(chat_id, reply_text)
 
         # Append to Google Sheet if configured
-        if os.getenv("SHEET_ID"):
-            try:
-                ts = time.strftime("%Y-%m-%d %H:%M:%S")
-                sheet_row = [ts, str(chat_id), name, month, " | ".join(entries[:50]), parsed.get("raw_text")[:2000]]
-                sheets.append_row(os.getenv("SHEET_ID"), sheet_row, sheet_name=os.getenv("SHEET_NAME"))
-            except Exception as e:
-                logger.exception("Failed to append sheet: %s", e)
-                telegram_bot.send_message(chat_id, "Parsed but failed to append to sheet.")
+        # if os.getenv("SHEET_ID"):
+        #     try:
+        #         ts = time.strftime("%Y-%m-%d %H:%M:%S")
+        #         sheet_row = [ts, str(chat_id), name, month, " | ".join(entries[:50]), parsed.get("raw_text")[:2000]]
+        #         sheets.append_row(os.getenv("SHEET_ID"), sheet_row, sheet_name=os.getenv("SHEET_NAME"))
+        #     except Exception as e:
+        #         logger.exception("Failed to append sheet: %s", e)
+        #         telegram_bot.send_message(chat_id, "Parsed but failed to append to sheet.")
 
         return {"ok": True}
     except Exception as e:

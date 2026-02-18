@@ -14,6 +14,19 @@ def _parse_date_str(date_str: str) -> datetime.date:
     return datetime.datetime.strptime(date_str, "%d%b%y").date()
 
 
+def _is_overnight(entry: dict) -> bool:
+    """
+    Detect if a flight is overnight (arrives next calendar day).
+    Rule: STA < RPT (both as HHMM integers) — the clock wrapped past midnight.
+    Requires both rpt and sta to be set.
+    """
+    rpt = entry.get("rpt")
+    sta = entry.get("sta")
+    if rpt and sta:
+        return int(sta) < int(rpt)
+    return False
+
+
 def parse_timesheet(text: str) -> Dict:
     lines = [l.strip() for l in text.splitlines() if l.strip()]
     date_pattern = re.compile(r"\d{2}[A-Za-z]{3}\d{2}")
@@ -54,6 +67,13 @@ def parse_timesheet(text: str) -> Dict:
 
 
 def merge_split_flights(entries: list[dict]) -> list[dict]:
+    """
+    Merge continuation blocks for the same flight.
+    A continuation block is a block on the next date that carries only the STA
+    for a flight that started the previous day (overnight flight).
+
+    Match criteria: same flight_number + same sector, and previous entry missing STA.
+    """
     merged = []
 
     for e in entries:
@@ -63,9 +83,7 @@ def merge_split_flights(entries: list[dict]) -> list[dict]:
 
         prev = merged[-1]
 
-        # Only merge if:
-        # same flight + same sector
-        # AND previous missing STA
+        # Merge if: same flight number + same sector + previous entry missing STA
         if (
             e.get("flight_number")
             and prev.get("flight_number") == e.get("flight_number")
@@ -81,8 +99,6 @@ def merge_split_flights(entries: list[dict]) -> list[dict]:
         merged.append(e)
 
     return merged
-
-
 
 
 def _parse_block(date, block_lines):
@@ -109,11 +125,25 @@ def _parse_block(date, block_lines):
 
         times = re.findall(r"\b\d{4}\b", section_text)
 
-        rpt = times[0] if len(times) >= 1 else None
-        std = times[1] if len(times) >= 2 else None
-        sta = times[2] if len(times) >= 3 else (
-              times[-1] if len(times) >= 1 else None
-        )
+        rpt = None
+        std = None
+        sta = None
+
+        if len(times) >= 3:
+            # Normal case: RPT STD STA
+            rpt = times[0]
+            std = times[1]
+            sta = times[2]
+
+        elif len(times) == 2:
+            # RPT + STD only (STA on next day)
+            rpt = times[0]
+            std = times[1]
+            sta = None
+
+        elif len(times) == 1:
+            # Continuation block (STA only)
+            sta = times[0]
 
         entries.append({
             "start_date": date,
@@ -149,7 +179,6 @@ def _parse_block(date, block_lines):
     return entries
 
 
-
 def group_trips(entries: list[dict]) -> list[list[dict]]:
     trips = []
     current = []
@@ -157,7 +186,7 @@ def group_trips(entries: list[dict]) -> list[list[dict]]:
     for e in entries:
         duty = e.get("duty_type")
 
-        # Standby → isolated
+        # Standby → isolated block
         if duty and duty.startswith("SS"):
             if current:
                 trips.append(current)
@@ -171,31 +200,26 @@ def group_trips(entries: list[dict]) -> list[list[dict]]:
         origin = e.get("origin")
         destination = e.get("destination")
 
-        # Broken arrival (CDG-SIN at start)
+        # Broken arrival (e.g. CDG-SIN at start of month — no outbound in this period)
         if origin != "SIN" and destination == "SIN" and not current:
             trips.append([e])
             continue
 
-        # Outbound from SIN starts new trip
-        if origin == "SIN":
-            if current:
-                trips.append(current)
+        # Start new trip ONLY if not already in one
+        if origin == "SIN" and not current:
             current = [e]
             continue
 
-        # Inbound to SIN ends trip
-        if destination == "SIN":
-            if current:
-                current.append(e)
-                trips.append(current)
-                current = []
-            else:
-                trips.append([e])
-            continue
-
-        # Any other FLY in between
+        # If already in trip, just append
         if current:
             current.append(e)
+
+            # End trip when inbound flight lands at SIN and has STA
+            if destination == "SIN" and e.get("sta"):
+                trips.append(current)
+                current = []
+
+            continue
 
     if current:
         trips.append(current)
@@ -203,6 +227,23 @@ def group_trips(entries: list[dict]) -> list[list[dict]]:
     return trips
 
 
+def _trip_end_date(trip: list[dict]) -> str:
+    """
+    Return the effective end date for a trip.
+    For overnight inbound legs (STA < RPT), the trip ends the following day.
+    """
+    fly = [e for e in trip if e.get("duty_type") == "FLY"]
+    if not fly:
+        return trip[-1]["start_date"]
+
+    last = fly[-1]
+    base = _parse_date_str(last["start_date"])
+
+    # If the last flight is an inbound overnight, end date is +1
+    if last.get("destination") == "SIN" and _is_overnight(last):
+        base += datetime.timedelta(days=1)
+
+    return base.strftime("%d%b%y")
 
 
 def trips_to_message(trips: list[list[dict]]) -> str:
@@ -211,10 +252,10 @@ def trips_to_message(trips: list[list[dict]]) -> str:
     for trip in trips:
         e0 = trip[0]
         start = e0["start_date"]
-        end = trip[-1]["start_date"]
 
         # Standby
         if e0.get("duty_type", "").startswith("SS"):
+            end = trip[-1]["start_date"]
             lines.append(
                 f"{start} - {end} | {e0['duty_type']} | "
                 f"{e0.get('rpt','-')} | {e0.get('sta','-')}"
@@ -226,9 +267,11 @@ def trips_to_message(trips: list[list[dict]]) -> str:
             continue
 
         first = fly[0]
-        last = fly[-1]
 
-        # Broken arrival (arrival only)
+        # Compute effective end date (accounts for overnight inbound)
+        end = _trip_end_date(trip)
+
+        # Broken arrival (arrival only — inbound only trip, no outbound in period)
         if first["origin"] != "SIN" and first["destination"] == "SIN":
             lines.append(
                 f"{start} - {end} | {first['sector']} | - | "
@@ -236,15 +279,9 @@ def trips_to_message(trips: list[list[dict]]) -> str:
             )
             continue
 
-        # Determine outbound and inbound
-        outbound = None
-        inbound = None
-
-        for e in fly:
-            if e["origin"] == "SIN":
-                outbound = e
-            if e["destination"] == "SIN":
-                inbound = e
+        # Determine outbound and inbound legs
+        outbound = next((e for e in fly if e["origin"] == "SIN"), None)
+        inbound = next((e for e in reversed(fly) if e["destination"] == "SIN"), None)
 
         if outbound and inbound:
             lines.append(
@@ -264,74 +301,167 @@ def trips_to_sheet_rows(trips: list[list[dict]]) -> list[list]:
         if not fly:
             continue
 
+        # --- Determine trip dates ---
         start_date = _parse_date_str(trip[0]["start_date"])
-        end_date = _parse_date_str(trip[-1]["start_date"])
 
-        all_dates = [
-            start_date + datetime.timedelta(days=i)
-            for i in range((end_date - start_date).days + 1)
-        ]
+        # Effective end date: last flight's date, +1 if overnight inbound
+        last_fly = fly[-1]
+        end_date = _parse_date_str(last_fly["start_date"])
+        inbound_overnight = (
+            last_fly.get("destination") == "SIN" and _is_overnight(last_fly)
+        )
+        if inbound_overnight:
+            end_date += datetime.timedelta(days=1)
 
-        fly_by_date = {
-            _parse_date_str(e["start_date"]): e
-            for e in fly
-        }
-
-        # Determine if turnaround (2 flights same day)
+        # --- Determine turnaround ---
+        # Turnaround: exactly 2 FLY entries on the same calendar date
         turnaround = (
             len(fly) == 2 and
             fly[0]["start_date"] == fly[1]["start_date"]
         )
 
-        station = None
-        if fly:
-            first = fly[0]
-            if first["origin"] == "SIN":
-                station = first["destination"]
-            else:
-                station = first["origin"]
+        # --- Station (layover destination) ---
+        first_fly = fly[0]
+        if first_fly["origin"] == "SIN":
+            station = first_fly["destination"]
+        else:
+            station = first_fly["origin"]
 
+        # --- Build a map: date → list of flight entries (list to handle turnarounds) ---
+        fly_by_date: dict[datetime.date, list[dict]] = {}
+        for e in fly:
+            d = _parse_date_str(e["start_date"])
+            fly_by_date.setdefault(d, []).append(e)
+
+        # --- Collect the outbound overnight STA so we can place it on the next layover row ---
+        # Key: date of the layover day → STA value to put in col F
+        outbound_sta_for_layover: dict[datetime.date, str] = {}
+        outbound = next((e for e in fly if e["origin"] == "SIN"), None)
+        if outbound and _is_overnight(outbound):
+            dep_date = _parse_date_str(outbound["start_date"])
+            next_date = dep_date + datetime.timedelta(days=1)
+            outbound_sta_for_layover[next_date] = _format_time(outbound.get("sta"))
+
+        # --- Generate date range (inclusive of arrival day for overnight inbound) ---
+        all_dates = [
+            start_date + datetime.timedelta(days=i)
+            for i in range((end_date - start_date).days + 1)
+        ]
+
+        # Track dates already handled by overnight inbound arrival rows
+        # so we don't also emit them as intermediate layover rows.
+        overnight_arrival_dates: set[datetime.date] = set()
+
+        # Pre-scan for overnight inbound to register its arrival date
+        for e in fly:
+            if e.get("destination") == "SIN" and _is_overnight(e):
+                dep_d = _parse_date_str(e["start_date"])
+                overnight_arrival_dates.add(dep_d + datetime.timedelta(days=1))
+
+        # --- Build rows ---
         for d in all_dates:
-            e = fly_by_date.get(d)
             date_str = d.strftime("%m/%d/%Y")
+            entries_today = fly_by_date.get(d, [])
 
-            if e:
+            if turnaround and entries_today:
+                # Two rows, one per leg, same date
+                for e in entries_today:
+                    dep = e.get("origin") or ""
+                    arr = e.get("destination") or ""
+                    rpt_fmt = _format_time(e.get("rpt"))
+                    sta_fmt = _format_time(e.get("sta"))
+
+                    if dep == "SIN":
+                        e_col = rpt_fmt
+                        f_col = sta_fmt if not _is_overnight(e) else "-"
+                        g_col = ""
+                        h_col = ""
+                    else:
+                        e_col = ""
+                        f_col = ""
+                        g_col = rpt_fmt
+                        h_col = sta_fmt
+
+                    rows.append([
+                        date_str, dep, arr, "Turnaround",
+                        e_col, f_col, g_col, h_col,
+                        "", "", "", "", ""
+                    ])
+
+            elif entries_today and not turnaround:
+                # Non-turnaround: one flight per date (either outbound or inbound)
+                e = entries_today[0]
                 dep = e.get("origin") or ""
                 arr = e.get("destination") or ""
+                rpt_fmt = _format_time(e.get("rpt"))
+                sta_fmt = _format_time(e.get("sta"))
 
-                ftype = "Turnaround" if turnaround else "Layover"
+                overnight = _is_overnight(e)
 
-                rpt = _format_time(e.get("rpt"))
-                std = _format_time(e.get("std"))
-                sta = _format_time(e.get("sta"))
+                if dep == "SIN":
+                    # Outbound leg
+                    e_col = rpt_fmt
+                    f_col = sta_fmt if not overnight else "-"
+                    g_col = ""
+                    h_col = ""
+                    rows.append([
+                        date_str, dep, arr, "Layover",
+                        e_col, f_col, g_col, h_col,
+                        "", "", "", "", ""
+                    ])
 
-                row = [
-                    date_str,        # A Date
-                    dep,             # B From
-                    arr,             # C To
-                    ftype,           # D Type
-                    rpt if dep == "SIN" else "",  # E
-                    sta if dep == "SIN" else "",  # F
-                    rpt if dep != "SIN" else "",  # G
-                    sta if dep != "SIN" else "",  # H
-                    "", "", "", "", ""            # I–M (durations not handled here)
-                ]
+                elif arr == "SIN":
+                    # Inbound leg — check for broken arrival (no RPT = month started mid-trip)
+                    broken_arrival = not rpt_fmt
+
+                    if broken_arrival:
+                        # Broken arrival: no departure shown in this period.
+                        # Show F='-' (no outbound RPT) and H=STA.
+                        rows.append([
+                            date_str, dep, arr, "Layover",
+                            "", "-", "", sta_fmt,
+                            "", "", "", "", ""
+                        ])
+                    elif overnight:
+                        # Overnight inbound: split into two rows.
+                        # Row 1 — departure day: G=RPT only, no from/to, no STA
+                        rows.append([
+                            date_str, "", station, "Layover",
+                            "", "", rpt_fmt, "",
+                            "", "", "", "", ""
+                        ])
+                        # Row 2 — arrival day (next date): B=origin, C=SIN, F='-', H=STA
+                        arrival_date_str = (d + datetime.timedelta(days=1)).strftime("%m/%d/%Y")
+                        rows.append([
+                            arrival_date_str, dep, arr, "Layover",
+                            "", "-", "", sta_fmt,
+                            "", "", "", "", ""
+                        ])
+                    else:
+                        # Same-day inbound: normal row
+                        rows.append([
+                            date_str, dep, arr, "Layover",
+                            "", "", rpt_fmt, sta_fmt,
+                            "", "", "", "", ""
+                        ])
+
+            elif d in overnight_arrival_dates:
+                # This date was already emitted as an overnight inbound arrival row above.
+                # Skip — do not emit a second intermediate layover row for this date.
+                pass
 
             else:
-                # Intermediate layover day (no flight)
-                row = [
-                    date_str,   # A
-                    "",         # B
-                    station,    # C
-                    "Layover",  # D
-                    "", "", "", "",
-                    "", "", "", "", ""
-                ]
+                # Intermediate layover day (no flight today)
+                # Check if this day carries the STA of an overnight outbound
+                f_col = outbound_sta_for_layover.get(d, "")
 
-            rows.append(row)
+                rows.append([
+                    date_str, "", station, "Layover",
+                    "", f_col, "", "",
+                    "", "", "", "", ""
+                ])
 
     return rows
-
 
 
 def _format_time(t):
