@@ -14,6 +14,10 @@ def _get_vision_client():
     if not creds_b64:
         raise RuntimeError("GOOGLE_CREDS_B64 not set")
 
+    # Fix padding safely
+    missing_padding = len(creds_b64) % 4
+    if missing_padding:
+        creds_b64 += "=" * (4 - missing_padding)
     creds_json = base64.b64decode(creds_b64).decode("utf-8")
     creds_dict = json.loads(creds_json)
 
