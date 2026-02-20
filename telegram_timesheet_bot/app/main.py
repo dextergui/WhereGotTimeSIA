@@ -46,7 +46,10 @@ async def telegram_webhook(webhook_path: str, request: Request):
                     [ts, str(chat_id), pending["reply_text"]],
                     sheet_name=os.getenv("SHEET_NAME"),
                 )
-                telegram_bot.send_message(chat_id, "✅ Pushed to Google Sheets.")
+                telegram_bot.send_message(
+                    chat_id,
+                    "✅ Pushed to Google Sheets.\n\n" + config.INSTRUCTION_TEXT,
+                )
             except Exception as e:
                 logger.exception("Sheet error: %s", e)
                 telegram_bot.send_message(chat_id, "❌ Failed to push.")
@@ -55,43 +58,60 @@ async def telegram_webhook(webhook_path: str, request: Request):
 
         if data == "CONFIRM_NO":
             PENDING_UPLOADS.pop(chat_id, None)
-            telegram_bot.send_message(chat_id, "Cancelled.")
+            telegram_bot.send_message(
+                chat_id,
+                "Cancelled.\n\n" + config.INSTRUCTION_TEXT,
+            )
             return {"ok": True}
 
-        # ======================
-        # MESSAGE HANDLER
-        # ======================
-        msg = update.get("message") or {}
-        chat = msg.get("chat", {})
-        chat_id = chat.get("id")
-        text = msg.get("text")
+        return {"ok": True}
 
-        if chat_id not in config.TRUSTED_CHAT_IDS:
-            telegram_bot.send_message(chat_id, "Access denied.")
-            return {"ok": True}
+    # ======================
+    # MESSAGE HANDLER
+    # ======================
+    msg = update.get("message")
+    if not msg:
+        return {"ok": True}
 
-        # ---- /start command ----
-        if text == "/start":
-            telegram_bot.send_message(chat_id, config.INSTRUCTION_TEXT)
-            return {"ok": True}
+    chat = msg.get("chat", {})
+    chat_id = chat.get("id")
+    text = msg.get("text")
 
-        file_id = None
-        filename = None
+    if chat_id not in config.TRUSTED_CHAT_IDS:
+        telegram_bot.send_message(chat_id, "Access denied.")
+        return {"ok": True}
 
-        photos = msg.get("photo")
-        if photos:
-            file_id = photos[-1]["file_id"]
+    # ---- /start ----
+    if text == "/start":
+        telegram_bot.send_message(chat_id, config.INSTRUCTION_TEXT)
+        return {"ok": True}
 
-        doc = msg.get("document")
-        if doc:
-            file_id = doc.get("file_id")
-            filename = doc.get("file_name")
+    # ---- /health ----
+    if text == "/health":
+        telegram_bot.send_message(chat_id, "🟢 System is alive.")
+        return {"ok": True}
 
-        # ---- If NOT image/file → send instructions ----
-        if not file_id:
-            telegram_bot.send_message(chat_id, config.INSTRUCTION_TEXT)
-            return {"ok": True}
+    # ---- Extract file ----
+    file_id = None
+    filename = None
 
+    photos = msg.get("photo")
+    if photos:
+        file_id = photos[-1]["file_id"]
+
+    doc = msg.get("document")
+    if doc:
+        file_id = doc.get("file_id")
+        filename = doc.get("file_name")
+
+    # If not file → show instructions
+    if not file_id:
+        telegram_bot.send_message(chat_id, config.INSTRUCTION_TEXT)
+        return {"ok": True}
+
+    # ======================
+    # FILE PROCESSING
+    # ======================
     fi = telegram_bot.get_file_info(file_id)
     file_path = fi.get("file_path")
 
@@ -106,17 +126,22 @@ async def telegram_webhook(webhook_path: str, request: Request):
         return {"ok": True}
 
     # OCR + Parse
-    extracted_text = ocr.extract_text_from_file(file_bytes, filename)
-    parsed = service.parse_timesheet(extracted_text)
-    trips = service.group_trips(parsed["entries"])
-    reply_text = service.trips_to_message(trips)
+    try:
+        extracted_text = ocr.extract_text_from_file(file_bytes, filename)
+        parsed = service.parse_timesheet(extracted_text)
+        trips = service.group_trips(parsed["entries"])
+        reply_text = service.trips_to_message(trips)
+    except Exception as e:
+        logger.exception("Processing failed: %s", e)
+        telegram_bot.send_message(chat_id, "Processing failed.")
+        return {"ok": True}
 
-    # Store pending
+    # Store pending confirmation
     PENDING_UPLOADS[chat_id] = {
         "reply_text": reply_text,
     }
 
-    # Inline buttons
+    # Inline confirmation buttons
     keyboard = {
         "inline_keyboard": [
             [
