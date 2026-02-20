@@ -10,9 +10,16 @@ TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 API_URL = f"https://api.telegram.org/bot{TOKEN}"
 
 
-def send_message(chat_id: int, text: str) -> dict:
+def send_message(chat_id: int, text: str, reply_markup=None) -> dict:
+    payload = {
+        "chat_id": chat_id,
+        "text": text
+    }
+    if reply_markup:
+        payload["reply_markup"] = reply_markup
+
     url = f"{API_URL}/sendMessage"
-    res = requests.post(url, json={"chat_id": chat_id, "text": text})
+    res = requests.post(url, json=payload)
     return res.json()
 
 
@@ -28,3 +35,9 @@ def download_file(file_path: str) -> bytes | None:
     if r.status_code == 200:
         return r.content
     return None
+
+def answer_callback_query(callback_query_id):
+    requests.post(
+        f"{API_URL}/answerCallbackQuery",
+        json={"callback_query_id": callback_query_id}
+    )

@@ -7,6 +7,7 @@ BASE_DIR = Path(__file__).resolve().parent
 
 # Required
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+TRUSTED_CHAT_IDS = set(map(int, os.getenv("TRUSTED_IDS").split(",")))
 SHEET_ID = os.getenv("SHEET_ID")
 
 # The service account JSON for Google APIs (base64 or raw JSON string)
@@ -15,8 +16,10 @@ GOOGLE_CREDS_B64 = os.getenv("GOOGLE_CREDS_B64")
 # Webhook path (set on Render as: https://<service>.onrender.com/<WEBHOOK_PATH>)
 WEBHOOK_PATH = os.getenv("WEBHOOK_PATH", "webhook")
 
-USE_PYTESSERACT_FALLBACK = os.getenv("USE_PYTESSERACT_FALLBACK", "0") == "1"
-
+INSTRUCTION_TEXT = (
+    "Send a timesheet image (photo or file).\n\n"
+    "After parsing, I will ask whether to push to Google Sheets."
+)
 
 def ensure_google_creds_file() -> str | None:
     """If GOOGLE_CREDS_B64 provided, decode and write to temp file and set env var."""
