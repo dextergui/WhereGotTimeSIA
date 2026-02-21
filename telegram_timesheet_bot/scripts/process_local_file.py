@@ -22,57 +22,6 @@ load_dotenv()
 
 from app import ocr, sheets, service
 
-
-# def build_reply(parsed, chat_id=None):
-#     name = parsed.get("name") or "(unknown)"
-#     month = parsed.get("month") or "(unknown)"
-#     entries = parsed.get("entries") or []
-
-#     lines = [
-#         f"Timesheet parsed for: {name}",
-#         f"Period: {month}",
-#         "Entries:"
-#     ]
-
-#     for e in entries[:20]:
-#         lines.append(
-#             f"{e.get('start_date')} | {e.get('sector')} | {e.get('duty_type')} | {e.get('flight_time')}"
-#         )
-
-#     return "\n".join(lines)
-
-
-# def build_sheet_row(parsed, chat_id=None):
-#     import time
-
-#     ts = time.strftime("%Y-%m-%d %H:%M:%S")
-#     name = parsed.get("name") or ""
-#     month = parsed.get("month") or ""
-#     entries = parsed.get("entries") or []
-#     raw = parsed.get("raw_text") or ""
-
-#     # Convert dict entries into short string summaries
-#     entry_strings = []
-#     for e in entries[:50]:
-#         entry_strings.append(
-#             f"{e.get('start_date')} "
-#             f"{e.get('flight_number') or ''} "
-#             f"{e.get('sector') or ''} "
-#             f"{e.get('duty_type') or ''}"
-#         )
-
-#     row = [
-#         ts,
-#         str(chat_id or "local"),
-#         name,
-#         month,
-#         " | ".join(entry_strings),
-#         raw[:2000]
-#     ]
-
-#     return row
-
-
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("file", help="Path to image or PDF")

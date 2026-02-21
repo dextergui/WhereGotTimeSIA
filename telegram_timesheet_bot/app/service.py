@@ -124,26 +124,48 @@ def _parse_block(date, block_lines):
         flight_number = flight_token.replace(" ", "")
 
         times = re.findall(r"\b\d{4}\b", section_text)
+        durations = re.findall(r"\b\d{2}:\d{2}\b", section_text)
 
         rpt = None
         std = None
         sta = None
+        flightTime = None
+        dutyTime = None
+        fdp = None
 
         if len(times) >= 3:
             # Normal case: RPT STD STA
             rpt = times[0]
             std = times[1]
             sta = times[2]
-
-        elif len(times) == 2:
+        elif len(times) == 2 and len(durations) == 1:
+            # Overnight flight with missing RPT (e.g. dep on 31st, arrives next month with no RPT shown)
+            # In this case we have STD + STA but no RPT, and the single duration is the flight time.
+            std = times[0]
+            sta = times[1]
+        elif len(times) == 2 and len(durations) > 1:
             # RPT + STD only (STA on next day)
             rpt = times[0]
             std = times[1]
-            sta = None
-
         elif len(times) == 1:
             # Continuation block (STA only)
             sta = times[0]
+
+        if len(durations) >= 3:
+            # normal case: Flight Time, Duty Time, FDP
+            flightTime = durations[0]
+            dutyTime = durations[1]
+            fdp = durations[2]
+        elif len(durations) == 2:
+            # only Duty Time and FDP shown (e.g. for standby duty)
+            dutyTime = durations[0]
+            fdp = durations[1]
+        elif len(durations) == 1 and std == None:
+            # no STD shown, but we have a single duration — treat it as FDP (e.g. for ATDO/AALV/OFFD home duty)
+            fdp = durations[0]
+        elif len(durations) == 1 and std != None and sta != None:
+            # have STD and STA — treat the single duration as Flight Time (e.g. for short turnaround flights that don't show duty time or FDP)
+            flightTime = durations[0]
 
         entries.append({
             "start_date": date,
@@ -155,6 +177,9 @@ def _parse_block(date, block_lines):
             "rpt": rpt,
             "std": std,
             "sta": sta,
+            "flight_time": flightTime,
+            "duty_time": dutyTime,
+            "fdp": fdp,
             "raw_block": section_text
         })
 
@@ -295,6 +320,7 @@ def trips_to_message(trips: list[list[dict]]) -> str:
 
 def trips_to_sheet_rows(trips: list[list[dict]]) -> list[list]:
     rows = []
+    print(trips)
 
     for trip in trips:
         fly = [e for e in trip if e.get("duty_type") == "FLY"]
