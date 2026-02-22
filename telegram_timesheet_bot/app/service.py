@@ -34,43 +34,32 @@ def _is_overnight(entry: dict) -> bool:
 
 def parse_timesheet(text: str) -> Dict:
     lines = [l.strip() for l in text.splitlines() if l.strip()]
-    date_pattern = re.compile(r"\d{2}\s?[A-Za-z]{3}\d{2}")
+    date_pattern = re.compile(r"\d{2}[A-Za-z]{3}\d{2}")
 
-    duty_entries = []
-    current_block = []
+    entries = []
     current_date = None
 
     for line in lines:
         date_match = date_pattern.search(line)
 
         if date_match:
-            # Save previous block if exists
-            if current_block:
-                duty_entries.extend(
-                    _parse_block(current_date, current_block)
-                )
-                current_block = []
+            current_date = date_match.group()
 
-            current_date = date_match.group().replace(" ", "")
-            current_block.append(line)
+        if not current_date:
+            continue
 
-        elif current_block:
-            current_block.append(line)
+        prev = entries[-1] if entries else None
+        entry = _parse_row(current_date, line, prev)
+        if entry:
+            entries.append(entry)
 
-    # Add last block
-    if current_block:
-        duty_entries.extend(
-            _parse_block(current_date, current_block)
-        )
-    
-    for e in duty_entries:
-        print(f"{e.get('start_date')} | {e.get('flight_number')} | {e.get('sector')} | {e.get('origin')}|{e.get('destination')} | RPT: {e.get('rpt')} | STD: {e.get('std')} | STA: {e.get('sta')} | Flight: {e.get('flight_time')} | Duty: {e.get('duty_time')}  | FDP: {e.get('fdp')}")
-
-    merged_entries = merge_split_flights(duty_entries)
-    merged_entries = fix_misplaced_overnight_departures(merged_entries)
+    # for e in entries:
+    #     print(f"{e.get('start_date')} | {e.get('flight_number')} | {e.get('sector')} | {e.get('duty_type')} | {e.get('rpt')} | {e.get('std')} | {e.get('sta')} | {e.get('flight_time')} | {e.get('duty_time')} | {e.get('fdp')} | ")
+    entries = merge_split_flights(entries)
+    entries = fix_misplaced_overnight_departures(entries)
 
     return {
-        "entries": merged_entries,
+        "entries": entries,
         "raw_text": text
     }
 
@@ -138,123 +127,115 @@ def merge_split_flights(entries: list[dict]) -> list[dict]:
     return merged
 
 
-def _parse_block(date, block_lines):
-    entries = []
+def _parse_row(date: str, line: str, prev: dict | None) -> dict | None:
 
-    text = "\n".join(block_lines)
+    # Ignore header rows
+    if "Start Day Flight" in line:
+        return None
 
-    # Split by each SQ occurrence
-    flight_sections = re.split(r"(SQ\s?\d+)", text)
+    # Standby
+    ss_match = re.search(r"(SS\d+)", line)
+    if ss_match:
+        times = re.findall(r"\b\d{4}\b", line)
+        return {
+            "start_date": date,
+            "flight_number": None,
+            "sector": None,
+            "origin": None,
+            "destination": None,
+            "duty_type": ss_match.group(),
+            "rpt": times[0] if len(times) >= 1 else None,
+            "std": None,
+            "sta": times[2] if len(times) >= 3 else None,
+        }
 
-    # re.split keeps delimiters → pair them
-    for i in range(1, len(flight_sections), 2):
-        flight_token = flight_sections[i]
-        section_text = flight_token + flight_sections[i + 1]
+    # Home duty (ATDO, AALV, OFFD)
+    home_match = HOME_DUTY_REGEX.search(line)
+    if home_match:
+        return {
+            "start_date": date,
+            "flight_number": None,
+            "sector": None,
+            "origin": None,
+            "destination": None,
+            "duty_type": home_match.group(),
+        }
 
-        sector_match = re.search(r"[A-Z]{3}-[A-Z]{3}", section_text)
-        if not sector_match:
-            # Try to inherit sector from next block
-            next_sector = None
-            if i + 2 < len(flight_sections):
-                next_text = flight_sections[i + 2]
-                next_sector_match = re.search(r"[A-Z]{3}-[A-Z]{3}", next_text)
-                if next_sector_match:
-                    next_sector = next_sector_match.group()
+    # Flight
+    flight_match = re.search(r"(SQ\s?\d+)", line)
+    sector_match = re.search(r"([A-Z]{3})\s?-\s?([A-Z]{3})", line)
 
-            if not next_sector:
-                continue
+    if not flight_match or not sector_match:
+        return None
 
-            sector = next_sector
+    flight_number = flight_match.group().replace(" ", "")
+    origin, destination = sector_match.groups()
+
+    same_flight_as_prev = (
+        prev
+        and prev.get("flight_number") == flight_number
+        and prev.get("sector") == f"{origin}-{destination}"
+    )
+
+    times = re.findall(r"\b\d{4}\b", line)
+    durations = re.findall(r"\b\d{2}:\d{2}\b", line)
+
+    rpt = std = sta = None
+
+    if len(times) >= 3:
+        rpt, std, sta = times[:3]
+    elif len(times) == 2:
+        if same_flight_as_prev:
+            if prev.get("rpt"):
+                std, sta = times
+        elif origin == "SIN":
+            rpt, std = times
+        elif len(durations) >= 2:
+            rpt, std = times
         else:
-            sector = sector_match.group()
-
-        sector = sector_match.group()
-        origin, destination = sector.split("-")
-
-        flight_number = flight_token.replace(" ", "")
-
-        times = re.findall(r"\b\d{4}\b", section_text)
-        durations = re.findall(r"\b\d{2}:\d{2}\b", section_text)
-
-        rpt = None
-        std = None
-        sta = None
-        flightTime = None
-        dutyTime = None
-        fdp = None
-
-        if len(times) >= 3:
-            # Normal case: RPT STD STA
-            rpt = times[0]
-            std = times[1]
-            sta = times[2]
-        elif len(times) == 2 and len(durations) == 1:
-            # Overnight flight with missing RPT (e.g. dep on 31st, arrives next month with no RPT shown)
-            # In this case we have STD + STA but no RPT, and the single duration is the flight time.
-            std = times[0]
-            sta = times[1]
-        elif len(times) == 2 and len(durations) > 1:
-            # RPT + STD only (STA on next day)
-            rpt = times[0]
-            std = times[1]
-        elif len(times) == 1:
-            if "SIN-" in sector:
-                # outbound start
+            std, sta = times
+    elif len(times) == 1:
+        if same_flight_as_prev:
+            if not prev.get("sta"):
+                sta = times[0]
+            elif not prev.get("std"):
+                std = times[0]
+        else:
+            # fallback (rare)
+            if origin == "SIN":
                 rpt = times[0]
             else:
-                sta = times[0]
+                std = times[0]
 
-        if len(durations) >= 3:
-            # normal case: Flight Time, Duty Time, FDP
-            flightTime = durations[0]
-            dutyTime = durations[1]
-            fdp = durations[2]
-        elif len(durations) == 2:
-            # only Duty Time and FDP shown (e.g. for standby duty)
-            dutyTime = durations[0]
-            fdp = durations[1]
-        elif len(durations) == 1:
-            if "SIN-" not in sector and len(times) == 2:
-                # continuation arrival block → duration is flight time
-                flightTime = durations[0]
-            else:
-                fdp = durations[0]
+    flight_time = duty_time = fdp = None
 
-        entries.append({
-            "start_date": date,
-            "flight_number": flight_number,
-            "sector": sector,
-            "origin": origin,
-            "destination": destination,
-            "duty_type": "FLY",
-            "rpt": rpt,
-            "std": std,
-            "sta": sta,
-            "flight_time": flightTime,
-            "duty_time": dutyTime,
-            "fdp": fdp,
-            "raw_block": section_text
-        })
+    if len(durations) >= 3:
+        flight_time, duty_time, fdp = durations[:3]
+    elif len(durations) == 2:
+        duty_time, fdp = durations
+    elif len(durations) == 1:
+        if same_flight_as_prev:
+            # continuation of overnight flight → duration is FDP
+            fdp = durations[0]
+        else:
+            # normal single-duration row → flight time
+            flight_time = durations[0]
 
-    # Handle SS standby separately
-    if "SS" in text:
-        ss_match = re.search(r"(SS\d+)", text)
-        if ss_match:
-            times = re.findall(r"\b\d{4}\b", text)
-            entries.append({
-                "start_date": date,
-                "flight_number": None,
-                "sector": None,
-                "origin": None,
-                "destination": None,
-                "duty_type": ss_match.group(),
-                "rpt": times[0] if len(times) >= 1 else None,
-                "std": None,
-                "sta": times[2] if len(times) >= 3 else None,
-                "raw_block": text
-            })
-
-    return entries
+    return {
+        "start_date": date,
+        "flight_number": flight_number,
+        "sector": f"{origin}-{destination}",
+        "origin": origin,
+        "destination": destination,
+        "duty_type": "FLY",
+        "rpt": rpt,
+        "std": std,
+        "sta": sta,
+        "flight_time": flight_time,
+        "duty_time": duty_time,
+        "fdp": fdp,
+        "raw_block": line
+    }
 
 
 def group_trips(entries: list[dict]) -> list[list[dict]]:
@@ -326,9 +307,17 @@ def _trip_end_date(trip: list[dict]) -> str:
 
 
 def trips_to_message(trips: list[list[dict]]) -> str:
-    lines = ["Flights:"]
+    if not trips or not trips[0]:
+        return "No trips found."
+
+    first_date = _parse_date_str(trips[0][0]["start_date"])
+    month_name = first_date.strftime("%B").upper()
+
+    lines = [f"Flights for {month_name}:"]
 
     for trip in trips:
+        if not trip:
+            continue
         e0 = trip[0]
         start = e0["start_date"]
 

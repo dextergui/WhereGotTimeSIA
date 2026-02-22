@@ -153,7 +153,11 @@ async def telegram_webhook(webhook_path: str, request: Request):
 
     telegram_bot.send_message(
         chat_id,
-        reply_text + "\n\nPush to Google Sheets?",
+        reply_text
+    )
+    telegram_bot.send_message(
+        chat_id,
+        "Push data to Google Sheets?",
         reply_markup=keyboard,
     )
 
