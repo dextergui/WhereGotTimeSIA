@@ -44,10 +44,10 @@ def main():
             data = f.read()
         extracted_text = ocr.extract_text_from_file(data, filename=path)
         
-    # print("=== RAW OCR TEXT ===")
-    # print(parsed_text)
-    # print("====================")
-    # If extract_text_from_file returns text, we need to parse
+    print("=== RAW OCR TEXT ===")
+    print(extracted_text)
+    print("====================")
+
     parsed = service.parse_timesheet(extracted_text)
     trips = service.group_trips(parsed["entries"])
 
