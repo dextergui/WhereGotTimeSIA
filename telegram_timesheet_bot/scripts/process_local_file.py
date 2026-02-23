@@ -50,6 +50,10 @@ def main():
 
     parsed = service.parse_timesheet(extracted_text)
     trips = service.group_trips(parsed["entries"])
+    # for trip in trips:
+    #     print("=== TRIP ===")
+    #     for e in trip:
+    #         print(f"{e.get('start_date')} | {e.get('arrival_date')} | {e.get('flight_number')} | {e.get('sector')} | {e.get('duty_type')} | {e.get('rpt')} | {e.get('std')} | {e.get('sta')} | {e.get('flight_time')} | {e.get('duty_time')} | {e.get('fdp')} | ")
 
     reply = service.trips_to_message(trips)
     row = service.trips_to_sheet_rows(trips)

@@ -53,10 +53,10 @@ def parse_timesheet(text: str) -> Dict:
         if entry:
             entries.append(entry)
 
-    # for e in entries:
-    #     print(f"{e.get('start_date')} | {e.get('flight_number')} | {e.get('sector')} | {e.get('duty_type')} | {e.get('rpt')} | {e.get('std')} | {e.get('sta')} | {e.get('flight_time')} | {e.get('duty_time')} | {e.get('fdp')} | ")
     entries = merge_split_flights(entries)
     entries = fix_misplaced_overnight_departures(entries)
+    # for e in entries:
+    #     print(f"{e.get('start_date')} | {e.get('arrival_date')} | {e.get('flight_number')} | {e.get('sector')} | {e.get('duty_type')} | {e.get('rpt')} | {e.get('std')} | {e.get('sta')} | {e.get('flight_time')} | {e.get('duty_time')} | {e.get('fdp')} | ")
 
     return {
         "entries": entries,
@@ -201,11 +201,12 @@ def _parse_row(date: str, line: str, prev: dict | None) -> dict | None:
             elif not prev.get("std"):
                 std = times[0]
         else:
-            # fallback (rare)
-            if origin == "SIN":
-                rpt = times[0]
+            # broken inbound from previous month
+            if origin != "SIN":
+                sta = times[0]
+            # outbound with only rpt
             else:
-                std = times[0]
+                rpt = times[0]
 
     flight_time = duty_time = fdp = None
 
@@ -215,10 +216,16 @@ def _parse_row(date: str, line: str, prev: dict | None) -> dict | None:
         duty_time, fdp = durations
     elif len(durations) == 1:
         if same_flight_as_prev:
-            # continuation of overnight flight → duration is FDP
+            # overnight continuation
             fdp = durations[0]
+
+        elif len(times) == 1 and origin != "SIN":
+            # broken inbound from previous month
+            # single time = STA, single duration = FDP
+            fdp = durations[0]
+
         else:
-            # normal single-duration row → flight time
+            # normal single-duration row
             flight_time = durations[0]
 
     return {
@@ -297,13 +304,8 @@ def _trip_end_date(trip: list[dict]) -> str:
 
     last = fly[-1]
     arrival_date = last.get("arrival_date", last["start_date"])
-    base = _parse_date_str(arrival_date)
 
-    # If the last flight is an inbound overnight, end date is +1
-    if last.get("destination") == "SIN" and _is_overnight(last):
-        base += datetime.timedelta(days=1)
-
-    return base.strftime("%d%b%y")
+    return _parse_date_str(arrival_date).strftime("%d%b%y")
 
 
 def trips_to_message(trips: list[list[dict]]) -> str:
@@ -313,17 +315,17 @@ def trips_to_message(trips: list[list[dict]]) -> str:
     first_date = _parse_date_str(trips[0][0]["start_date"])
     month_name = first_date.strftime("%B").upper()
 
-    lines = [f"Flights for {month_name}:"]
+    lines = [f"Flights for *{month_name} {first_date.year}*:"]
 
     for trip in trips:
         if not trip:
             continue
         e0 = trip[0]
-        start = e0["start_date"]
+        start = _parse_date_str(e0["start_date"]).strftime("%d%b")
 
         # Standby
         if e0.get("duty_type", "").startswith("SS"):
-            end = trip[-1]["start_date"]
+            end = _parse_date_str(trip[-1]["start_date"]).strftime("%d%b")
             lines.append(
                 f"{start} - {end} | {e0['duty_type']} | "
                 f"{e0.get('rpt','-')} | {e0.get('sta','-')}"
@@ -337,7 +339,7 @@ def trips_to_message(trips: list[list[dict]]) -> str:
         first = fly[0]
 
         # Compute effective end date (accounts for overnight inbound)
-        end = _trip_end_date(trip)
+        end = _parse_date_str(_trip_end_date(trip)).strftime("%d%b")
 
         # Broken arrival (arrival only — inbound only trip, no outbound in period)
         if first["origin"] != "SIN" and first["destination"] == "SIN":
@@ -369,13 +371,22 @@ def trips_to_sheet_rows(trips: list[list[dict]]) -> list[list]:
         if not fly:
             continue
 
+        trip_start_index = len(rows)
         start_date = _parse_date_str(fly[0]["start_date"])
         last = fly[-1]
         end_date = _parse_date_str(last["start_date"])
 
-        # inbound overnight extends one day
-        if last.get("destination") == "SIN" and _is_overnight(last):
-            end_date += datetime.timedelta(days=1)
+        # If last flight has arrival_date, use it to compute end_date (accounts for overnight inbound)
+        if last.get("arrival_date"):
+            end_date = _parse_date_str(last["arrival_date"])
+
+            # prevent duplicate arrival day
+            last_is_overnight_inbound = (
+                last.get("destination") == "SIN"
+                and _is_overnight(last)
+            )
+        else:
+            last_is_overnight_inbound = False
 
         turnaround = (
             len(fly) == 2 and
@@ -390,9 +401,14 @@ def trips_to_sheet_rows(trips: list[list[dict]]) -> list[list]:
             d = _parse_date_str(e["start_date"])
             fly_by_date.setdefault(d, []).append(e)
 
+        days_span = (end_date - start_date).days + 1
+
+        if last_is_overnight_inbound:
+            days_span -= 1  # prevent duplicate last day
+
         all_dates = [
             start_date + datetime.timedelta(days=i)
-            for i in range((end_date - start_date).days + 1)
+            for i in range(days_span)
         ]
 
         for d in all_dates:
@@ -420,7 +436,7 @@ def trips_to_sheet_rows(trips: list[list[dict]]) -> list[list]:
                     rows.append([
                         date_str, dep, arr, "Turnaround",
                         e_col, f_col, g_col, h_col,
-                        duty_h, duty_m, "",
+                        duty_h, duty_m, "=ROUND(I{row}+(J{row}/60), 2)",
                         flight_h, flight_m
                     ])
 
@@ -440,7 +456,7 @@ def trips_to_sheet_rows(trips: list[list[dict]]) -> list[list]:
                         rows.append([
                             date_str, dep, arr, "Layover",
                             rpt, "-", "", "",
-                            "", "", "",
+                            "", "", "=ROUND(I{row}+(J{row}/60), 2)",
                             "", ""
                         ])
 
@@ -453,7 +469,7 @@ def trips_to_sheet_rows(trips: list[list[dict]]) -> list[list]:
                         rows.append([
                             arrival, "", arr, "Layover",
                             "", sta, "", "",
-                            duty_h, duty_m, "",
+                            duty_h, duty_m, "=ROUND(I{row}+(J{row}/60), 2)",
                             flight_h, flight_m
                         ])
 
@@ -461,7 +477,7 @@ def trips_to_sheet_rows(trips: list[list[dict]]) -> list[list]:
                         rows.append([
                             date_str, dep, arr, "Layover",
                             rpt, sta, "", "",
-                            "", "", "",
+                            "", "", "=ROUND(I{row}+(J{row}/60), 2)",
                             "", ""
                         ])
 
@@ -471,7 +487,7 @@ def trips_to_sheet_rows(trips: list[list[dict]]) -> list[list]:
                         rows.append([
                             date_str, "", station, "Layover",
                             "", "", rpt, "",
-                            duty_h, duty_m, "",
+                            duty_h, duty_m, "=ROUND(I{row}+(J{row}/60), 2)",
                             flight_h, flight_m
                         ])
 
@@ -480,14 +496,14 @@ def trips_to_sheet_rows(trips: list[list[dict]]) -> list[list]:
                         rows.append([
                             arrival, dep, arr, "Layover",
                             "", "-", "", sta,
-                            "", "", "",
+                            "", "", "=ROUND(I{row}+(J{row}/60), 2)",
                             "", ""
                         ])
                     else:
                         rows.append([
                             date_str, dep, arr, "Layover",
                             "", "", rpt, sta,
-                            duty_h, duty_m, "",
+                            duty_h, duty_m, "=ROUND(I{row}+(J{row}/60), 2)",
                             flight_h, flight_m
                         ])
 
@@ -496,32 +512,40 @@ def trips_to_sheet_rows(trips: list[list[dict]]) -> list[list]:
                 rows.append([
                     date_str, "", station, "Layover",
                     "", "", "", "",
-                    "", "", "",
+                    "", "", "=ROUND(I{row}+(J{row}/60), 2)",
                     "", ""
                 ])
         # --- Populate I–M only on first and last row of this trip ---
         if rows:
-            trip_rows = rows[-len(all_dates):]  # rows just added for this trip
+            trip_rows = rows[trip_start_index:]
 
-            # first flight of trip
-            first_flight = fly[0]
-            duty_h, duty_m = _split_duration(first_flight.get("duty_time"))
-            flight_h, flight_m = _split_duration(first_flight.get("flight_time"))
+            if trip_rows:
 
-            trip_rows[0][8] = duty_h
-            trip_rows[0][9] = duty_m
-            trip_rows[0][11] = flight_h
-            trip_rows[0][12] = flight_m
+                # first actual flight row (departure)
+                first_row = trip_rows[0]
 
-            # last flight of trip (if different)
-            last_flight = fly[-1]
-            duty_h, duty_m = _split_duration(last_flight.get("duty_time"))
-            flight_h, flight_m = _split_duration(last_flight.get("flight_time"))
+                first_flight = fly[0]
+                duty_h, duty_m = _split_duration(first_flight.get("duty_time"))
+                flight_h, flight_m = _split_duration(first_flight.get("flight_time"))
 
-            trip_rows[-1][8] = duty_h
-            trip_rows[-1][9] = duty_m
-            trip_rows[-1][11] = flight_h
-            trip_rows[-1][12] = flight_m
+                first_row[8] = duty_h
+                first_row[9] = duty_m
+                first_row[11] = flight_h
+                first_row[12] = flight_m
+
+                # find actual arrival row for last flight
+                last_flight = fly[-1]
+                duty_h, duty_m = _split_duration(last_flight.get("duty_time"))
+                flight_h, flight_m = _split_duration(last_flight.get("flight_time"))
+
+                # arrival row = last row that has arrival airport
+                for row in reversed(trip_rows):
+                    if row[2] == last_flight.get("destination"):
+                        row[8] = duty_h
+                        row[9] = duty_m
+                        row[11] = flight_h
+                        row[12] = flight_m
+                        break
     return rows
 
 
