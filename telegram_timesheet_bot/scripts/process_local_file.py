@@ -53,7 +53,10 @@ def main():
 
     parsed = service.parse_timesheet(extracted_text)
     entries_str = entries_to_string(parsed["entries"])
+    print("--- Parsed entries ---")
     print(entries_str)
+    print("----------------------")
+
     if args.snapshot:
         with open(args.snapshot, "w", encoding="utf-8") as f:
             f.write(entries_str)
@@ -61,8 +64,10 @@ def main():
 
     trips = service.group_trips(parsed["entries"])
 
-
+    # TODO - fix trips_to_message function, based on new parsing logic
     reply = service.trips_to_message(trips)
+
+    # TODO - fix trips_to_sheet_rows function, based on new parsing logic
     row = service.trips_to_sheet_rows(trips)
 
     print("--- Reply message ---")
