@@ -12,6 +12,8 @@ import base64
 import argparse
 from pathlib import Path
 
+from telegram_timesheet_bot.scripts.run_tests import entries_to_string
+
 # Ensure project root is on sys.path so `from app import ...` works when
 # running this script as `python scripts/process_local_file.py ...`.
 ROOT = Path(__file__).resolve().parent.parent
@@ -20,7 +22,7 @@ sys.path.insert(0, str(ROOT))
 from dotenv import load_dotenv
 load_dotenv()
 
-from app import ocr, sheets, service
+from app import ocr, sheets, service, models
 
 def main():
     p = argparse.ArgumentParser()
@@ -28,6 +30,7 @@ def main():
     p.add_argument("--chat", type=int, help="Chat id to include in row/reply")
     p.add_argument("--append", action="store_true", help="Actually append to Google Sheet (requires SHEET_ID + creds)")
     p.add_argument("--mock", help="Path to raw OCR text file (skip Vision API)")
+    p.add_argument("--snapshot", help="Path to save snapshot of extracted text for debugging")
     args = p.parse_args()
 
     path = args.file
@@ -49,11 +52,15 @@ def main():
     # print("====================")
 
     parsed = service.parse_timesheet(extracted_text)
+    entries_str = entries_to_string(parsed["entries"])
+    print(entries_str)
+    if args.snapshot:
+        with open(args.snapshot, "w", encoding="utf-8") as f:
+            f.write(entries_str)
+        print(f"Snapshot of extracted text saved to {args.snapshot}")
+
     trips = service.group_trips(parsed["entries"])
-    # for trip in trips:
-    #     print("=== TRIP ===")
-    #     for e in trip:
-    #         print(f"{e.get('start_date')} | {e.get('arrival_date')} | {e.get('flight_number')} | {e.get('sector')} | {e.get('duty_type')} | {e.get('rpt')} | {e.get('std')} | {e.get('sta')} | {e.get('flight_time')} | {e.get('duty_time')} | {e.get('fdp')} | ")
+
 
     reply = service.trips_to_message(trips)
     row = service.trips_to_sheet_rows(trips)
