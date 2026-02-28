@@ -1,0 +1,9 @@
+Flights for MARCH 2026:
+01Mar - 01Mar | CDG-SIN | - | 18:05 (SQ337)
+04Mar - 05Mar | PVG | 05:20 (SQ828) | 19:40 (SQ831)
+07Mar - 07Mar | DPS | 14:20 (SQ944) | 22:55 (SQ945)
+09Mar - 11Mar | MEL | 09:00 (SQ217) | 11:40 (SQ248)
+13Mar - 18Mar | MXP | 21:45 (SQ356) | 07:30 (SQ355)
+21Mar - 24Mar | CHC | 17:50 (SQ297) | 17:40 (SQ298)
+28Mar - 28Mar | SS60 | 06:00 | 23:59
+30Mar - 30Mar | SS77 | 00:00 | 23:59

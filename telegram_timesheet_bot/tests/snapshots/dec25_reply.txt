@@ -1,0 +1,11 @@
+Flights for DECEMBER 2025:
+02Dec - 03Dec | MLE | 18:40 (SQ438) | 07:15 (SQ437)
+05Dec - 05Dec | SUB | 05:50 (SQ922) | 13:35 (SQ923)
+06Dec - 10Dec | CPH | 22:25 (SQ352) | 07:30 (SQ351)
+13Dec - 13Dec | CGK | 05:40 (SQ952) | 12:15 (SQ955)
+14Dec - 14Dec | BKK | 11:05 (SQ710) | 19:25 (SQ709)
+16Dec - 18Dec | KIX | 23:30 (SQ618) | 16:00 (SQ619)
+20Dec - 22Dec | NRT | 21:55 (SQ638) | 16:30 (SQ637)
+24Dec - 24Dec | SS80 | 08:00 | 23:59
+26Dec - 27Dec | BOM | 05:45 (SQ422) | 19:50 (SQ421)
+29Dec - 30Dec | SIN-BRU | 21:55 (SQ304) | 06:50 (SQ304)

@@ -1,0 +1,8 @@
+Flights for APRIL 2026:
+01Apr - 02Apr | TFU | 10:30 (SQ842) | 23:15 (SQ843)
+04Apr - 08Apr | FCO | 23:30 (SQ366) | 06:00 (SQ365)
+11Apr - 13Apr | PVG | 10:35 (SQ832) | 00:35 (SQ835)
+16Apr - 18Apr | DPS | 19:35 (SQ948) | 10:00 (SQ949)
+20Apr - 22Apr | PER | 22:10 (SQ225) | 11:45 (SQ224)
+25Apr - 25Apr | SGN | 15:15 (SQ186) | 22:40 (SQ185)
+26Apr - 27Apr | BKK | 16:30 (SQ720) | 00:35 (SQ719)

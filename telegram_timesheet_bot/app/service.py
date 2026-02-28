@@ -234,47 +234,41 @@ def _parse_row(date: str, line: str, prev: FlightRow | None) -> FlightRow | None
     )
 
 
-def group_trips(entries: list[dict]) -> list[list[dict]]:
+def group_trips(entries: list[FlightRow]) -> list[list[FlightRow]]:
     trips = []
     current = []
 
     for e in entries:
-        duty = e.get("duty_type")
-
-        # Standby → isolated block
-        if duty and duty.startswith("SS"):
+        if e.duty_type and e.duty_type.startswith("SS"):
             if current:
                 trips.append(current)
                 current = []
             trips.append([e])
             continue
-
-        if duty != "FLY":
+        if e.duty_type == "STBY":
+            current.append(e)
             continue
 
-        origin = e.get("origin")
-        destination = e.get("destination")
+        if e.duty_type != "FLY":
+            continue
 
-        # Broken arrival (e.g. CDG-SIN at start of month — no outbound in this period)
-        if origin != "SIN" and destination == "SIN" and not current:
+        # Broken inbound at start of period
+        if not current and e.origin != "SIN" and e.destination == "SIN":
             trips.append([e])
             continue
 
-        # Start new trip ONLY if not already in one
-        if origin == "SIN" and not current:
+        # Start trip
+        if not current and e.origin == "SIN":
             current = [e]
             continue
 
-        # If already in trip, just append
         if current:
             current.append(e)
 
-            # End trip when inbound flight lands at SIN and has STA
-            if destination == "SIN" and e.get("sta"):
+            # End trip when inbound arrives SIN and STA exists
+            if e.destination == "SIN" and e.sta:
                 trips.append(current)
                 current = []
-
-            continue
 
     if current:
         trips.append(current)
@@ -282,71 +276,80 @@ def group_trips(entries: list[dict]) -> list[list[dict]]:
     return trips
 
 
-def _trip_end_date(trip: list[dict]) -> str:
-    """
-    Return the effective end date for a trip.
-    For overnight inbound legs (STA < RPT), the trip ends the following day.
-    """
-    fly = [e for e in trip if e.get("duty_type") == "FLY"]
-    if not fly:
-        return trip[-1]["start_date"]
+def trips_to_message(entries: List[FlightRow]) -> str:
 
-    last = fly[-1]
-    arrival_date = last.get("arrival_date", last["start_date"])
+    trips = group_trips(entries)
+    # for trip in trips:
+    #     print("=== Trip ===")
+    #     for e in trip:
+    #         print(e)
+    #     print("============")
 
-    return _parse_date_str(arrival_date).strftime("%d%b%y")
-
-
-def trips_to_message(trips: list[list[dict]]) -> str:
-    if not trips or not trips[0]:
+    if not trips:
         return "No trips found."
 
-    first_date = _parse_date_str(trips[0][0]["start_date"])
+    first_date = _parse_date_str(trips[0][0].start_date)
     month_name = first_date.strftime("%B").upper()
 
-    lines = [f"Flights for *{month_name} {first_date.year}*:"]
+    lines = [f"Flights for {month_name} {first_date.year}:"]
 
     for trip in trips:
-        if not trip:
-            continue
-        e0 = trip[0]
-        start = _parse_date_str(e0["start_date"]).strftime("%d%b")
+        first_entry = trip[0]
+        start = _parse_date_str(first_entry.start_date).strftime("%d%b")
 
-        # Standby
-        if e0.get("duty_type", "").startswith("SS"):
-            end = _parse_date_str(trip[-1]["start_date"]).strftime("%d%b")
+        # Singapore Standby
+        if first_entry.duty_type.startswith("SS"):
+            end = _parse_date_str(trip[-1].start_date).strftime("%d%b")
             lines.append(
-                f"{start} - {end} | {e0['duty_type']} | "
-                f"{e0.get('rpt','-')} | {e0.get('sta','-')}"
+                f"{start} - {end} | {first_entry.duty_type} | "
+                f"{_format_time(first_entry.rpt)} | {_format_time(first_entry.sta)}"
             )
             continue
 
-        fly = [e for e in trip if e.get("duty_type") == "FLY"]
+        fly = [e for e in trip if e.duty_type == "FLY"]
+        stby = [e for e in trip if e.duty_type == "STBY"]
+
         if not fly:
             continue
 
-        first = fly[0]
+        # Determine end date using last flight entry
+        last_flight = fly[-1]
+        end = _parse_date_str(last_flight.start_date).strftime("%d%b")
 
-        # Compute effective end date (accounts for overnight inbound)
-        end = _parse_date_str(_trip_end_date(trip)).strftime("%d%b")
+        # Broken inbound only
+        if fly[0].origin != "SIN" and fly[0].destination == "SIN":
+            if fly[0].rpt:
+                row = f"{start} - {end} | {fly[0].sector} | "+f"{_format_time(fly[0].rpt)} ({fly[0].flight_number}) | "+f"{_format_time(fly[0].sta)} ({fly[0].flight_number})"
+            else:
+                row = f"{start} - {end} | {fly[0].sector} | - | "+f"{_format_time(fly[0].sta)} ({fly[0].flight_number})"
+            lines.append(row)
+            
+        # Broken Outbound only
+        elif fly[-1].destination != "SIN":
+            if last_flight.sta:
+                row = f"{start} - {end} | {fly[0].sector} | "+f"{_format_time(fly[0].rpt)} ({fly[0].flight_number}) | "+f"{_format_time(last_flight.sta)} ({last_flight.flight_number})"
+            else:
+                row = f"{start} - {end} | {fly[0].sector} | "+f"{_format_time(fly[0].rpt)} ({fly[0].flight_number}) | -"
+            lines.append(row)
+            
+        else:
 
-        # Broken arrival (arrival only — inbound only trip, no outbound in period)
-        if first["origin"] != "SIN" and first["destination"] == "SIN":
+            outbound = next((e for e in fly if e.origin == "SIN"), None)
+            inbound = next((e for e in reversed(fly) if e.destination == "SIN"), None)
+
+            if outbound and inbound:
+                lines.append(
+                    f"{start} - {end} | {outbound.destination} | "
+                    f"{_format_time(outbound.rpt)} ({outbound.flight_number}) | "
+                    f"{_format_time(inbound.sta)} ({inbound.flight_number})"
+                )
+
+        # Overseas Standby (append AFTER trip)
+        for s in stby:
+            stby_date = _parse_date_str(s.start_date).strftime("%d%b")
             lines.append(
-                f"{start} - {end} | {first['sector']} | - | "
-                f"{first.get('sta','-')} ({first.get('flight_number','')})"
-            )
-            continue
-
-        # Determine outbound and inbound legs
-        outbound = next((e for e in fly if e["origin"] == "SIN"), None)
-        inbound = next((e for e in reversed(fly) if e["destination"] == "SIN"), None)
-
-        if outbound and inbound:
-            lines.append(
-                f"{start} - {end} | {outbound['destination']} | "
-                f"{outbound.get('rpt','-')} ({outbound.get('flight_number','')}) | "
-                f"{inbound.get('sta','-')} ({inbound.get('flight_number','')})"
+                f"{stby_date} - {stby_date} | STBY ({s.sector}) | "
+                f"{_format_time(s.rpt)} | {_format_time(s.sta)}"
             )
 
     return "\n".join(lines)

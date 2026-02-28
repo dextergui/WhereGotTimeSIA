@@ -1,0 +1,14 @@
+Flights for APRIL 2026:
+01Apr - 01Apr | SS22 | 00:00 | 22:00
+02Apr - 02Apr | SS60 | 06:00 | 23:59
+05Apr - 05Apr | SS80 | 08:00 | 23:59
+07Apr - 07Apr | SGN | 07:40 (SQ178) | 15:20 (SQ177)
+08Apr - 09Apr | BKK | 16:30 (SQ720) | 00:35 (SQ719)
+11Apr - 11Apr | MNL | 05:50 (SQ914) | 16:50 (SQ913)
+13Apr - 15Apr | NGO | 23:20 (SQ672) | 16:00 (SQ671)
+17Apr - 17Apr | SS22 | 00:00 | 22:00
+18Apr - 18Apr | SS60 | 06:00 | 23:59
+20Apr - 20Apr | CGK | 14:15 (SQ962) | 20:55 (SQ963)
+21Apr - 25Apr | AMS | 21:55 (SQ324) | 05:30 (SQ323)
+28Apr - 28Apr | SIN-SEA | 07:00 (SQ28) | 08:45 (SQ28)
+30Apr - 30Apr | STBY (SEA) | 06:45 | 12:45
