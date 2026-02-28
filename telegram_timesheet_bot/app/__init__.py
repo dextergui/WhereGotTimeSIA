@@ -6,4 +6,5 @@ __all__ = [
     "ocr",
     "sheets",
     "service",
+    "models",
 ]
