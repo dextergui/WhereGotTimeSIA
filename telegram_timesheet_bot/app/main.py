@@ -129,8 +129,7 @@ async def telegram_webhook(webhook_path: str, request: Request):
     try:
         extracted_text = ocr.extract_text_from_file(file_bytes, filename)
         parsed = service.parse_timesheet(extracted_text)
-        trips = service.group_trips(parsed["entries"])
-        reply_text = service.trips_to_message(trips)
+        reply_text = service.trips_to_message(parsed["entries"])
     except Exception as e:
         logger.exception("Processing failed: %s", e)
         telegram_bot.send_message(chat_id, "Processing failed.")
