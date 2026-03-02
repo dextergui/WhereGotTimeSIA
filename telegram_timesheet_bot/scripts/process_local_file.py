@@ -31,6 +31,7 @@ def main():
     p.add_argument("--mock", help="Path to raw OCR text file (skip Vision API)")
     p.add_argument("--snapshot-entries", help="Path to save snapshot of extracted text for debugging")
     p.add_argument("--snapshot-reply", help="Path to save snapshot of reply message for debugging")
+    p.add_argument("--snapshot-row", help="Path to save snapshot of sheet row for debugging")
     args = p.parse_args()
 
     path = args.file
@@ -70,25 +71,29 @@ def main():
             f.write(reply)
         print(f"Snapshot of reply message saved to {args.snapshot_reply}")
 
-    # TODO - fix trips_to_sheet_rows function, based on new parsing logic
-    # row = service.trips_to_sheet_rows(parsed["entries"])
+    row = service.trips_to_sheet_rows(parsed["entries"])
+    if args.snapshot_row:
+        with open(args.snapshot_row, "w", encoding="utf-8") as f:
+            for i, v in enumerate(row, 1):
+                f.write(f"{i}: {v}\n")
+        print(f"Snapshot of sheet row saved to {args.snapshot_row}")
 
     print("--- Reply message ---")
     print(reply)
     print()
-    # print("--- Sheet row (ready to append) ---")
-    # for i, v in enumerate(row, 1):
-    #     print(f"{i}:", (v if len(str(v)) < 200 else str(v)[:200] + '...'))
+    print("--- Sheet row (ready to append) ---")
+    for i, v in enumerate(row, 1):
+        print(f"{i}:", (v if len(str(v)) < 200 else str(v)[:200] + '...'))
 
-    # if args.append:
-    #     sheet_id = os.getenv("SHEET_ID")
-    #     if not sheet_id:
-    #         print("SHEET_ID not set; cannot append. Set SHEET_ID env var to enable append.")
-    #         sys.exit(1)
-    #     sheet_name = os.getenv("SHEET_NAME")
-    #     print("Appending to sheet... (sheet: %s)" % (sheet_name or 'sheet1'))
-    #     sheets.append_row(sheet_id, row, sheet_name=sheet_name)
-    #     print("Appended.")
+    if args.append:
+        sheet_id = os.getenv("SHEET_ID")
+        if not sheet_id:
+            print("SHEET_ID not set; cannot append. Set SHEET_ID env var to enable append.")
+            sys.exit(1)
+        sheet_name = os.getenv("SHEET_NAME")
+        print("Appending to sheet... (sheet: %s)" % (sheet_name or 'sheet1'))
+        sheets.append_row(sheet_id, row, sheet_name=sheet_name)
+        print("Appended.")
 
 
 if __name__ == "__main__":
