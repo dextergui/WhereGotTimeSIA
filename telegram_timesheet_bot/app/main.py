@@ -35,6 +35,7 @@ async def telegram_webhook(webhook_path: str, request: Request):
 
         if data == "CONFIRM_YES":
             pending = PENDING_UPLOADS.pop(chat_id, None)
+            logger.log("Pushing SheetRows: \n", pending)
             if not pending:
                 telegram_bot.send_message(chat_id, "No pending data.")
                 return {"ok": True}
