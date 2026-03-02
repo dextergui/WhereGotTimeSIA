@@ -40,12 +40,12 @@ async def telegram_webhook(webhook_path: str, request: Request):
                 return {"ok": True}
 
             try:
-                ts = time.strftime("%Y-%m-%d %H:%M:%S")
-                sheets.append_row(
-                    os.getenv("SHEET_ID"),
-                    [ts, str(chat_id), pending["reply_text"]],
-                    sheet_name=os.getenv("SHEET_NAME"),
-                )
+                sheet_id = os.getenv("SHEET_ID")
+                if not sheet_id:
+                    print("SHEET_ID not set; cannot append. Set SHEET_ID env var to enable append.")
+                    raise Exception("SHEET_ID not set; cannot append. Set SHEET_ID env var to enable append.")
+                sheet_name = os.getenv("SHEET_NAME")
+                sheets.append_row(sheet_id, pending, sheet_name=sheet_name)
                 telegram_bot.send_message(
                     chat_id,
                     "✅ Pushed to Google Sheets.\n\n" + config.INSTRUCTION_TEXT,
@@ -130,6 +130,7 @@ async def telegram_webhook(webhook_path: str, request: Request):
         extracted_text = ocr.extract_text_from_file(file_bytes, filename)
         parsed = service.parse_timesheet(extracted_text)
         reply_text = service.trips_to_message(parsed["entries"])
+        sheet_rows = service.trips_to_sheet_rows(parsed["entries"])
     except Exception as e:
         logger.exception("Processing failed: %s", e)
         telegram_bot.send_message(chat_id, "Processing failed.")
@@ -137,7 +138,7 @@ async def telegram_webhook(webhook_path: str, request: Request):
 
     # Store pending confirmation
     PENDING_UPLOADS[chat_id] = {
-        "reply_text": reply_text,
+        "sheet_rows": sheet_rows,
     }
 
     # Inline confirmation buttons
