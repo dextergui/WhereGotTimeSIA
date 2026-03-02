@@ -9,7 +9,7 @@ from . import config, telegram_bot, ocr, sheets, service
 
 app = FastAPI()
 logger = logging.getLogger("uvicorn.error")
-PENDING_UPLOADS: dict[int, dict] = {}
+PENDING_UPLOADS: dict[int, list[list]] = {}
 
 
 @app.post("/{webhook_path}")
@@ -35,11 +35,11 @@ async def telegram_webhook(webhook_path: str, request: Request):
 
         if data == "CONFIRM_YES":
             pending = PENDING_UPLOADS.pop(chat_id, None)
-            logger.info("Pushing SheetRows: \n", pending)
             if not pending:
                 telegram_bot.send_message(chat_id, "No pending data.")
                 return {"ok": True}
 
+            logger.info("Pushing SheetRows: %s", pending)
             try:
                 sheet_id = os.getenv("SHEET_ID")
                 if not sheet_id:
@@ -138,9 +138,7 @@ async def telegram_webhook(webhook_path: str, request: Request):
         return {"ok": True}
 
     # Store pending confirmation
-    PENDING_UPLOADS[chat_id] = {
-        "sheet_rows": sheet_rows,
-    }
+    PENDING_UPLOADS[chat_id] = sheet_rows
 
     # Inline confirmation buttons
     keyboard = {
