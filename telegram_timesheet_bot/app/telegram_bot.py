@@ -25,7 +25,7 @@ def send_message(chat_id: int, text: str, reply_markup=None) -> dict:
 
 def get_file_info(file_id: str) -> dict:
     url = f"{API_URL}/getFile"
-    res = requests.get(url, params={"file_id": file_id})
+    res = requests.get(url, params={"file_id": file_id}, timeout=10)
     return res.json().get("result") or {}
 
 
