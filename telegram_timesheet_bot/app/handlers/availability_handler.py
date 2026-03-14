@@ -3,7 +3,10 @@ from .. import telegram_bot, service
 
 
 def start(chat_id):
-    telegram_bot.send_message(chat_id, "Send person's name.")
+    telegram_bot.send_message(chat_id, """
+                              📅 Availability Mode
+                              => Send person's name.
+                              """)
 
 
 def handle(chat_id, text):
@@ -18,17 +21,39 @@ def handle(chat_id, text):
             current_name=text
         )
 
-        telegram_bot.send_message(chat_id, "Send trips text.")
+        telegram_bot.send_message(chat_id, """
+                                  📅 Availability Mode
+                                  => Send trips text extracted from /extract.
+                                  """)
         return
 
 
     if state["step"] == "await_trips":
 
-        parsed = service.parse_timesheet(text)
+        expected_month = state["data"].get("month")
+        expected_year = state["data"].get("year")
+
+        ok, result = service.validate_extracted_block(
+            text,
+            expected_month,
+            expected_year
+        )
+
+        if not ok:
+            telegram_bot.send_message(chat_id, f"""
+                                      📅 Availability Mode
+                                      => {result}
+                                      """)
+            return
+
+        # first user defines month/year
+        if not expected_month:
+            state["data"]["month"] = result["month"]
+            state["data"]["year"] = result["year"]
 
         state["data"]["people"].append({
             "name": state["current_name"],
-            "entries": parsed["entries"]
+            "trips": result["trips"]
         })
 
         keyboard = {
@@ -40,7 +65,10 @@ def handle(chat_id, text):
 
         telegram_bot.send_message(
             chat_id,
-            "Trips added.",
+            f"""
+            📅 Availability Mode
+            ✅ Trips added for {state['current_name']}
+            """,
             reply_markup=keyboard
         )
 
@@ -54,15 +82,24 @@ def callback(chat_id, data):
 
         update(chat_id, step="await_name")
 
-        telegram_bot.send_message(chat_id, "Send next name.")
+        telegram_bot.send_message(chat_id, """
+                                  📅 Availability Mode
+                                  => Send next name.
+                                  """)
         return
 
 
     if data == "START_SEARCH":
 
         people = state["data"]["people"]
+        month = state["data"]["month"]
+        year = state["data"]["year"]
 
-        result = service.find_common_locations(people)
+        result = service.find_common_locations(
+            people,
+            month,
+            year
+        )
 
         telegram_bot.send_message(chat_id, result)
 
