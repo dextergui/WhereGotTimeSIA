@@ -8,6 +8,7 @@ BASE_DIR = Path(__file__).resolve().parent
 # Required
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 TRUSTED_CHAT_IDS = set(map(int, os.getenv("TRUSTED_IDS").split(",")))
+ALLOWED_TO_USE_BOT_CHAT_IDS = set(map(int, os.getenv("ALLOWED_IDS").split(",")))
 SHEET_ID = os.getenv("SHEET_ID")
 SHEET_NAME = os.getenv("SHEET_NAME", "Sheet1")
 
