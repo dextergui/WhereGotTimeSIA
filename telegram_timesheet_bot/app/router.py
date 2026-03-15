@@ -2,6 +2,16 @@ from .state import get, set, clear, PENDING_UPLOADS
 from .handlers import parse_handler, availability_handler
 from app import telegram_bot
 
+INSTRUCTION_TEXT = """
+🤖 Bot Usage
+
+/health → Check the status of the bot  
+/extract → Send image to extract trips  
+/availability → Find common availability between crews
+
+/cancel → Cancel current mode
+You can use the commands anytime.
+"""
 
 def route_message(chat_id, text, msg):
 
@@ -36,16 +46,6 @@ def route_message(chat_id, text, msg):
 
     if not state:
         # Reply with instructions
-        INSTRUCTION_TEXT = """
-        🤖 Bot Usage
-
-        /health → Check the status of the bot  
-        /extract → Send image to extract trips  
-        /availability → Find common availability between crews
-
-        /cancel → Cancel current mode
-        You can use the commands anytime.
-        """
         telegram_bot.send_message(chat_id, INSTRUCTION_TEXT)
         return {"ok": True}
 

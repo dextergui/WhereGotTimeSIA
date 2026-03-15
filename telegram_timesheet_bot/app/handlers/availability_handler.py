@@ -60,7 +60,7 @@ def handle(chat_id, text):
 
         telegram_bot.send_message(
             chat_id,
-            f"📅 Availability Mode\n✅ Trips added for {state['current_name']}\n📃 List of people added: {names_list}",
+            f"📅 Availability Mode\n✅ Trips added for {state['current_name']}\n📃 List of people added: \n{names_list}",
             reply_markup=keyboard
         )
 
