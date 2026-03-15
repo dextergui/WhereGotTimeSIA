@@ -3,10 +3,7 @@ from ..state import update, PENDING_UPLOADS
 
 
 def start(chat_id):
-    telegram_bot.send_message(chat_id, """
-                              🤖 Extraction Mode
-                              => Send an image to parse.
-                              """)
+    telegram_bot.send_message(chat_id, "🤖 Extraction Mode\n=> Send an image to parse.")
 
 
 def handle(chat_id, msg):
@@ -24,39 +21,27 @@ def handle(chat_id, msg):
         filename = doc.get("file_name")
 
     if not file_id:
-        telegram_bot.send_message(chat_id, """
-                                  🤖 Extraction Mode
-                                  => Send an image.
-                                  """)
+        telegram_bot.send_message(chat_id, "🤖 Extraction Mode\n=> Send an image.")
         return
 
     fi = telegram_bot.get_file_info(file_id)
     file_path = fi.get("file_path")
 
     if not file_path:
-        telegram_bot.send_message(chat_id, """
-                                  🤖 Extraction Mode
-                                  => Could not access file. Please try again.
-                                  """)
+        telegram_bot.send_message(chat_id, "🤖 Extraction Mode\n=> Could not access file. Please try again.")
         return
 
     file_bytes = telegram_bot.download_file(file_path)
 
     if not file_bytes:
-        telegram_bot.send_message(chat_id, """
-                                  🤖 Extraction Mode
-                                  => Image download failed. Please try again.
-                                  """)
+        telegram_bot.send_message(chat_id, "🤖 Extraction Mode\n=> Image download failed. Please try again.")
         return
 
     try:
         extracted = ocr.extract_text_from_file(file_bytes, filename)
         parsed = service.parse_timesheet(extracted)
     except Exception:
-        telegram_bot.send_message(chat_id, """
-                                  🤖 Extraction Mode
-                                  => Image processing failed. Please try again.
-                                  """)
+        telegram_bot.send_message(chat_id, "🤖 Extraction Mode\n=> Image processing failed. Please try again.")
         return
 
     reply_text = service.trips_to_message(parsed["entries"])
@@ -78,10 +63,7 @@ def handle(chat_id, msg):
 
     telegram_bot.send_message(
         chat_id,
-        """
-        🤖 Extraction Mode
-        => Push to Google Sheets?
-        """,
+        "🤖 Extraction Mode\n=> Push to Google Sheets?",
         reply_markup=keyboard
     )
 
@@ -95,10 +77,7 @@ def callback(chat_id, data):
         pending = PENDING_UPLOADS.pop(chat_id, None)
 
         if not pending:
-            telegram_bot.send_message(chat_id, """
-                                      🤖 Extraction Mode
-                                      => No pending data. Please try again.
-                                      """)
+            telegram_bot.send_message(chat_id, "🤖 Extraction Mode\n=> No pending data. Please try again.")
             return
 
         try:
@@ -109,19 +88,13 @@ def callback(chat_id, data):
 
             telegram_bot.send_message(
                 chat_id,
-                """
-                🤖 Extraction Mode
-                ✅ Pushed to Google Sheets.
-                """
+                "🤖 Extraction Mode\n✅ Pushed to Google Sheets."
             )
 
         except Exception:
             telegram_bot.send_message(
                 chat_id,
-                """
-                🤖 Extraction Mode
-                ❌ Failed to push to Google Sheets. Please try again.
-                """
+                "🤖 Extraction Mode\n❌ Failed to push to Google Sheets. Please try again."
             )
 
         return
@@ -133,8 +106,5 @@ def callback(chat_id, data):
 
         telegram_bot.send_message(
             chat_id,
-            """
-            🤖 Extraction Mode
-            => Uploaded to Google Sheets cancelled.
-            """
+            "🤖 Extraction Mode\n=> Uploaded to Google Sheets cancelled."
         )
