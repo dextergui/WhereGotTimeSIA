@@ -3,10 +3,7 @@ from .. import telegram_bot, service
 
 
 def start(chat_id):
-    telegram_bot.send_message(chat_id, """
-                              📅 Availability Mode
-                              => Send person's name.
-                              """)
+    telegram_bot.send_message(chat_id, "📅 Availability Mode\n=> Send person's name.")
 
 
 def handle(chat_id, text):
@@ -21,10 +18,7 @@ def handle(chat_id, text):
             current_name=text
         )
 
-        telegram_bot.send_message(chat_id, """
-                                  📅 Availability Mode
-                                  => Send trips text extracted from /extract.
-                                  """)
+        telegram_bot.send_message(chat_id, "📅 Availability Mode\n=> Send trips text extracted from /extract.")
         return
 
 
@@ -40,10 +34,7 @@ def handle(chat_id, text):
         )
 
         if not ok:
-            telegram_bot.send_message(chat_id, f"""
-                                      📅 Availability Mode
-                                      => {result}
-                                      """)
+            telegram_bot.send_message(chat_id, f"📅 Availability Mode\n=> {result}")
             return
 
         # first user defines month/year
@@ -55,6 +46,10 @@ def handle(chat_id, text):
             "name": state["current_name"],
             "trips": result["trips"]
         })
+        names_list = "\n".join(
+            f"{i+1}. {p['name']}"
+            for i, p in enumerate(state["data"]["people"])
+        )
 
         keyboard = {
             "inline_keyboard": [[
@@ -65,10 +60,7 @@ def handle(chat_id, text):
 
         telegram_bot.send_message(
             chat_id,
-            f"""
-            📅 Availability Mode
-            ✅ Trips added for {state['current_name']}
-            """,
+            f"📅 Availability Mode\n✅ Trips added for {state['current_name']}\n📃 List of people added: {names_list}",
             reply_markup=keyboard
         )
 
@@ -82,10 +74,7 @@ def callback(chat_id, data):
 
         update(chat_id, step="await_name")
 
-        telegram_bot.send_message(chat_id, """
-                                  📅 Availability Mode
-                                  => Send next name.
-                                  """)
+        telegram_bot.send_message(chat_id, "📅 Availability Mode\n=> Send next name.")
         return
 
 

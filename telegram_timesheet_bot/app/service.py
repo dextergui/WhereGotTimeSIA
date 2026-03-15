@@ -544,7 +544,7 @@ def validate_extracted_block(text: str, expected_month=None, expected_year=None)
 
     try:
         parsed = parse_extracted_summary(text)
-    except:
+    except Exception:
         return False, "❌ Invalid summary block format."
 
     month = parsed["month"]
@@ -687,7 +687,7 @@ def find_meeting_slots(people, month, year, min_hours=3):
 
 def merge_overlaps(overlaps):
 
-    overlaps.sort()
+    overlaps.sort(key=lambda x: x[0])
 
     merged = []
 
@@ -700,7 +700,7 @@ def merge_overlaps(overlaps):
         last = merged[-1]
 
         if (
-            last[1] == o[0] and
+            last[1] >= o[0] and
             last[2] == o[2] and
             last[3] == o[3]
         ):
@@ -754,21 +754,38 @@ def build_presence_from_summary(trips, month, year):
     timeline = []
 
     month_start = datetime.datetime(year, month, 1)
-    month_end = datetime.datetime(year, month,
-        calendar.monthrange(year, month)[1], 23, 59)
+    month_end = datetime.datetime(
+        year, month,
+        calendar.monthrange(year, month)[1],
+        23, 59
+    )
 
     current_time = month_start
     current_loc = "SIN"
 
-    for t in sorted(trips, key=lambda x: x["start"]):
+    trips = sorted(trips, key=lambda x: x["start"])
 
-        timeline.append((current_time, t["start"], current_loc))
+    for i, t in enumerate(trips):
 
+        # gap before trip → at current location
+        if t["start"] > current_time:
+            timeline.append((current_time, t["start"], current_loc))
+
+        # during trip → overseas
         timeline.append((t["start"], t["end"], t["location"]))
 
         current_time = t["end"]
-        current_loc = "SIN"
 
-    timeline.append((current_time, month_end, current_loc))
+        # decide where crew is AFTER trip
+        is_last_trip = (i == len(trips) - 1)
+
+        if is_last_trip and t["location"] != "SIN":
+            current_loc = t["location"]   # still overseas
+        else:
+            current_loc = "SIN"
+
+    # tail after final trip
+    if current_time < month_end:
+        timeline.append((current_time, month_end, current_loc))
 
     return timeline
