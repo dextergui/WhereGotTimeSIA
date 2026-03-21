@@ -7,4 +7,5 @@ __all__ = [
     "sheets",
     "service",
     "models",
+    "calendar"
 ]
