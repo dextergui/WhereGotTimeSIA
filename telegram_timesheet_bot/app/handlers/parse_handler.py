@@ -1,5 +1,5 @@
-from .. import telegram_bot, ocr, service, sheets, config
-from ..state import update, PENDING_UPLOADS
+from .. import telegram_bot, ocr, service, sheets, config, calendar
+from ..state import update, PENDING_UPLOADS, PENDING_CALENDAR
 
 
 def start(chat_id):
@@ -52,7 +52,10 @@ def handle(chat_id, msg):
     if chat_id not in config.TRUSTED_CHAT_IDS:
         return
 
+    PENDING_UPLOADS.pop(chat_id, None)
+    PENDING_CALENDAR.pop(chat_id, None)
     PENDING_UPLOADS[chat_id] = sheet_rows
+    PENDING_CALENDAR[chat_id] = service.group_trips(parsed["entries"])
 
     keyboard = {
         "inline_keyboard": [[
@@ -97,6 +100,8 @@ def callback(chat_id, data):
                 "🤖 Extraction Mode\n❌ Failed to push to Google Sheets. Please try again."
             )
 
+        ask_calendar(chat_id)
+
         return
 
 
@@ -108,3 +113,45 @@ def callback(chat_id, data):
             chat_id,
             "🤖 Extraction Mode\n=> Uploaded to Google Sheets cancelled."
         )
+        ask_calendar(chat_id)
+
+        return
+
+    if data == "CAL_YES":
+
+        rows = PENDING_CALENDAR.pop(chat_id, None)
+
+        if not rows:
+            telegram_bot.send_message(chat_id, "🤖 Extraction Mode\n=> No calendar data.")
+            return
+
+        try:
+            calendar.push_events(rows)
+            telegram_bot.send_message(chat_id, "🤖 Extraction Mode\n=> ✅ Calendar events created.")
+        except Exception:
+            telegram_bot.send_message(chat_id, "🤖 Extraction Mode\n=> ❌ Calendar push failed.")
+
+        return
+
+
+    if data == "CAL_NO":
+        PENDING_CALENDAR.pop(chat_id, None)
+        telegram_bot.send_message(chat_id, "🤖 Extraction Mode\n=> Calendar push cancelled.")
+
+def ask_calendar(chat_id):
+
+    if chat_id not in PENDING_CALENDAR:
+        return  # nothing to push, skip
+
+    cal_keyboard = {
+        "inline_keyboard": [[
+            {"text": "Yes", "callback_data": "CAL_YES"},
+            {"text": "No", "callback_data": "CAL_NO"}
+        ]]
+    }
+
+    telegram_bot.send_message(
+        chat_id,
+        "🤖 Extraction Mode\n=> Push to Google Calendar?",
+        reply_markup=cal_keyboard
+    )

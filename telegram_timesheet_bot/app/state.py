@@ -1,5 +1,6 @@
 CHAT_STATE: dict[int, dict] = {}
 PENDING_UPLOADS: dict[int, list[list]] = {}
+PENDING_CALENDAR: dict[int, list] = {}
 
 def get(chat_id: int):
     return CHAT_STATE.get(chat_id)
