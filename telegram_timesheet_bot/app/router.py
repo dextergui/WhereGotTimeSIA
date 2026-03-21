@@ -62,7 +62,7 @@ def route_callback(chat_id, data):
     if not state:
         return
 
-    if data in ("CONFIRM_YES", "CONFIRM_NO"):
+    if data in ("CONFIRM_YES", "CONFIRM_NO", "CAL_YES", "CAL_NO"):
         return parse_handler.callback(chat_id, data)
 
     if data in ("ADD_MORE", "START_SEARCH"):
