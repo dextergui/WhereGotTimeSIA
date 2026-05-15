@@ -6,7 +6,7 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 from app import service, models
 
-TESTS = {"nov25", "dec25", "mar26", "apr26Brandon", "apr26Bing"}
+TESTS = {"nov25", "dec25", "mar26", "apr26Brandon", "apr26Bing", "jun26Bing"}
 
 def entries_to_string(entries: list[models.FlightRow]) -> str:
     lines = []
@@ -27,8 +27,8 @@ def test_entries_snapshot(filename: str):
         print(f"  - {filename} sheet row snapshot not found, skipping test")
         return
 
-    raw_text = raw_path.read_text()
-    expected = expected_path.read_text().strip()
+    raw_text = raw_path.read_text(encoding="utf-8")
+    expected = expected_path.read_text(encoding="utf-8").strip()
 
     result = service.parse_timesheet(raw_text)
     actual = entries_to_string(result["entries"]).strip()
@@ -62,8 +62,8 @@ def test_reply_snapshot(filename: str):
         print(f"  - {filename} sheet row snapshot not found, skipping test")
         return
 
-    raw_text = raw_path.read_text()
-    expected = expected_path.read_text().strip()
+    raw_text = raw_path.read_text(encoding="utf-8")
+    expected = expected_path.read_text(encoding="utf-8").strip()
 
     result = service.parse_timesheet(raw_text)
     actual = service.trips_to_message(result["entries"]).strip()
@@ -97,8 +97,8 @@ def test_sheet_row_snapshot(filename: str):
         print(f"  - {filename} sheet row snapshot not found, skipping test")
         return
 
-    raw_text = raw_path.read_text()
-    expected = expected_path.read_text().strip().splitlines()
+    raw_text = raw_path.read_text(encoding="utf-8")
+    expected = expected_path.read_text(encoding="utf-8").strip().splitlines()
 
     result = service.parse_timesheet(raw_text)
     actual_rows = service.trips_to_sheet_rows(result["entries"])

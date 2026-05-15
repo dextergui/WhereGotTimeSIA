@@ -48,9 +48,9 @@ def main():
             data = f.read()
         extracted_text = ocr.extract_text_from_file(data, filename=path)
         
-    # print("=== RAW OCR TEXT ===")
-    # print(extracted_text)
-    # print("====================")
+    print("=== RAW OCR TEXT ===")
+    print(extracted_text)
+    print("====================")
 
     parsed = service.parse_timesheet(extracted_text)
     entries_str = entries_to_string(parsed["entries"])

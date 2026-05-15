@@ -297,245 +297,374 @@ def group_trips(entries: list[FlightRow]) -> list[list[FlightRow]]:
     trips = categorize_trip(trips)
     return trips
 
+def _merge_flight_legs(fly: List[FlightRow]) -> List[FlightRow]:
+    merged = []
+    i = 0
+
+    while i < len(fly):
+        curr = fly[i]
+
+        if (
+            i + 1 < len(fly)
+            and fly[i + 1].flight_number == curr.flight_number
+            and fly[i + 1].sector == curr.sector
+        ):
+            nxt = fly[i + 1]
+
+            merged.append(FlightRow(
+                start_date=curr.start_date,
+                flight_number=curr.flight_number,
+                sector=curr.sector,
+                origin=curr.origin,
+                destination=curr.destination,
+                duty_type="FLY",
+                rpt=curr.rpt,
+                std=curr.std,
+                sta=nxt.sta,
+                flight_time=curr.flight_time,
+                duty_time=curr.duty_time,
+                fdp=curr.fdp,
+            ))
+            i += 2
+        else:
+            merged.append(curr)
+            i += 1
+
+    return merged
+
+def _merge_stby(stby: List[FlightRow]) -> List[tuple]:
+    if not stby:
+        return []
+
+    merged = []
+    i = 0
+
+    while i < len(stby):
+        start = stby[i]
+        end = start
+
+        while i + 1 < len(stby) and stby[i + 1].sector == start.sector:
+            end = stby[i + 1]
+            i += 1
+
+        merged.append((start, end))
+        i += 1
+
+    return merged
 
 def trips_to_message(entries: List[FlightRow]) -> str:
-
     trips = group_trips(entries)
-    # for trip in trips:
-    #     print("=== Trip ===")
-    #     for e in trip:
-    #         print(e)
-    #     print("============")
 
     if not trips:
         return "No trips found."
 
     first_date = _parse_date_str(trips[0][0].start_date)
-    month_name = first_date.strftime("%B").upper()
+    month_name = first_date.strftime("%B")
 
-    lines = [f"Flights for {month_name} {first_date.year}:"]
+    lines = [f"Flights for {month_name} {first_date.year}", "="*35]
 
     for trip in trips:
-        first_entry = trip[0]
-        start = _parse_date_str(first_entry.start_date).strftime("%d%b")
-
-        # Singapore Standby
-        if first_entry.duty_type.startswith("SS"):
-            end = _parse_date_str(trip[-1].start_date).strftime("%d%b")
-            lines.append(
-                f"{start} - {end} | {first_entry.duty_type} | "
-                f"{_format_time(first_entry.rpt)} | {_format_time(first_entry.sta)}"
-            )
-            continue
-
         fly = [e for e in trip if e.duty_type == "FLY"]
         stby = [e for e in trip if e.duty_type == "STBY"]
+        singaporeStby = [e for e in trip if e.duty_type.startswith("SS")]
+
+        # Handle singapore standby (e.g. SS22 / SS60)
+        if not fly and singaporeStby:
+            s = singaporeStby[0]
+            d = _parse_date_str(s.start_date)
+
+            lines.append(f"\n{d.strftime('%d %b')}")
+
+            rpt = f"{d.day}/{d.month} {_format_time(s.rpt)}" if s.rpt else "-"
+            sta = f"{d.day}/{d.month} {_format_time(s.sta)}" if s.sta else "-"
+
+            lines.append(f"{s.sector} ({s.duty_type}) | {rpt} | {sta}")
+            continue
 
         if not fly:
             continue
 
-        # Determine end date using last flight entry
-        last_flight = fly[-1]
-        end = _parse_date_str(last_flight.start_date).strftime("%d%b")
+        start = _parse_date_str(fly[0].start_date)
+        end = _parse_date_str(fly[-1].start_date)
 
-        # Broken inbound only
-        if fly[0].origin != "SIN" and fly[0].destination == "SIN":
-            if fly[0].rpt:
-                row = f"{start} - {end} | {fly[0].sector} | "+f"{_format_time(fly[0].rpt)} ({fly[0].flight_number}) | "+f"{_format_time(fly[0].sta)} ({fly[0].flight_number})"
-            else:
-                row = f"{start} - {end} | {fly[0].sector} | - | "+f"{_format_time(fly[0].sta)} ({fly[0].flight_number})"
-            lines.append(row)
-            
-        # Broken Outbound only
-        elif fly[-1].destination != "SIN":
-            if last_flight.sta:
-                row = f"{start} - {end} | {fly[0].sector} | "+f"{_format_time(fly[0].rpt)} ({fly[0].flight_number}) | "+f"{_format_time(last_flight.sta)} ({last_flight.flight_number})"
-            else:
-                row = f"{start} - {end} | {fly[0].sector} | "+f"{_format_time(fly[0].rpt)} ({fly[0].flight_number}) | -"
-            lines.append(row)
-            
-        else:
+        lines.append(f"\n{start.strftime('%d %b')} - {end.strftime('%d %b')}")
 
-            outbound = next((e for e in fly if e.origin == "SIN"), None)
-            inbound = next((e for e in reversed(fly) if e.destination == "SIN"), None)
+        fly = _merge_flight_legs(fly)
+        # --- PRINT ALL FLIGHT LEGS ---
+        for f in fly:
+            dep = f.origin
+            arr = f.destination
 
-            if outbound and inbound:
-                lines.append(
-                    f"{start} - {end} | {outbound.destination} | "
-                    f"{_format_time(outbound.rpt)} ({outbound.flight_number}) | "
-                    f"{_format_time(inbound.sta)} ({inbound.flight_number})"
-                )
+            rpt_date = _parse_date_str(f.start_date)
+            sta_date = rpt_date
 
-        # Overseas Standby (append AFTER trip)
-        for s in stby:
-            stby_date = _parse_date_str(s.start_date).strftime("%d%b")
+            # overnight arrival
+            if f.sta and f.rpt and int(f.sta) < int(f.rpt):
+                sta_date += datetime.timedelta(days=1)
+
+            rpt_str = f"{rpt_date.day}/{rpt_date.month} {_format_time(f.rpt)}" if f.rpt else "-"
+            sta_str = f"{sta_date.day}/{sta_date.month} {_format_time(f.sta)}" if f.sta else "-"
+
             lines.append(
-                f"{stby_date} - {stby_date} | STBY ({s.sector}) | "
-                f"{_format_time(s.rpt)} | {_format_time(s.sta)}"
+                f"{dep} → {arr} | {f.flight_number} | {rpt_str} | {sta_str}"
             )
+
+        # --- STANDBY ---
+        for s_start, s_end in _merge_stby(stby):
+            d1 = _parse_date_str(s_start.start_date)
+            d2 = _parse_date_str(s_end.start_date)
+
+            rpt = f"{d1.day}/{d1.month} {_format_time(s_start.rpt)}" if s_start.rpt else "-"
+            sta = f"{d2.day}/{d2.month} {_format_time(s_end.rpt)}" if s_end.rpt else "-"
+
+            lines.append(f"{s_start.sector} (STBY) | {rpt} | {sta}")
 
     return "\n".join(lines)
 
+def _make_sheet_row(
+    date_str,
+    dep="",
+    arr="",
+    trip_type="Layover",
+    ex_sin_rpt="",
+    ex_sin_sta="",
+    ex_stn_rpt="",
+    ex_stn_sta="",
+    duty_time="",
+    flight_time=""
+):
+    duty_h, duty_m = _split_duration(duty_time)
+    flight_h, flight_m = _split_duration(flight_time)
+
+    return [
+        date_str,
+        dep,
+        arr,
+        trip_type,
+        ex_sin_rpt,
+        ex_sin_sta,
+        ex_stn_rpt,
+        ex_stn_sta,
+        duty_h,
+        duty_m,
+        _decimal_hours(duty_h, duty_m) if duty_h else "",
+        flight_h,
+        flight_m,
+        _decimal_hours(flight_h, flight_m) if flight_h else "",
+    ]
+
+def _is_empty_layover_row(row: list) -> bool:
+    """
+    True if this is a pure placeholder layover row.
+    """
+
+    dep = row[1]
+    ex_sin_rpt = row[4]
+    ex_sin_sta = row[5]
+    ex_stn_rpt = row[6]
+    ex_stn_sta = row[7]
+
+    has_times = any([
+        ex_sin_rpt,
+        ex_sin_sta,
+        ex_stn_rpt,
+        ex_stn_sta,
+    ])
+
+    return dep == "" and not has_times
 
 def trips_to_sheet_rows(entries: List[FlightRow]) -> list[list]:
     trips = group_trips(entries)
     rows = []
 
     for trip in trips:
-        trip_start_index = len(rows)
 
-        # Skip SS standby
+        # Skip SS duties
         if trip[0].duty_type.startswith("SS"):
             continue
 
-        fly = [e for e in trip if e.duty_type == "FLY"]
-        if not fly:
-            continue
+        for e in trip:
 
-        is_turnaround_trip = all(f.trip_type == "Turnaround" for f in fly)
+            date_str = _parse_date_str(e.start_date).strftime("%m/%d/%Y")
 
-        start_date = _parse_date_str(fly[0].start_date)
-        last_flight = fly[-1]
-
-        # Determine end date (handle overnight arrival)
-        end_date = _parse_date_str(last_flight.start_date)
-        if last_flight.sta and last_flight.rpt and int(last_flight.sta) < int(last_flight.rpt):
-            end_date += datetime.timedelta(days=1)
-
-        days = (end_date - start_date).days + 1
-        all_dates = [start_date + datetime.timedelta(days=i) for i in range(days)]
-
-        station = fly[0].destination if fly[0].origin == "SIN" else fly[0].origin
-
-        # Map flights by date
-        flights_by_date = {}
-        for f in fly:
-            d = _parse_date_str(f.start_date)
-            flights_by_date.setdefault(d, []).append(f)
-
-        for d in all_dates:
-            date_str = d.strftime("%m/%d/%Y")
-            todays = flights_by_date.get(d, [])
-
-            if is_turnaround_trip and todays:
-                for f in todays:
-                    dep = f.origin or ""
-                    arr = f.destination or ""
-
-                    ex_sin_rpt = _format_time(f.rpt) if dep == "SIN" else ""
-                    if dep == "SIN":
-                        if not f.sta and f.rpt:
-                            # First row of overnight outbound
-                            ex_sin_sta = "-"
-                        else:
-                            ex_sin_sta = _format_time(f.sta)
-                    elif arr == "SIN" and (not f.rpt and not f.std):
-                        # Second row of overnight inbound
-                        ex_sin_sta = "-"
-                    else:
-                        ex_sin_sta = ""
-                    ex_stn_rpt = _format_time(f.std if is_turnaround_trip else f.rpt) if arr == "SIN" else ""
-                    ex_stn_sta = _format_time(f.sta) if arr == "SIN" else ""
-
-                    duty_h, duty_m = _split_duration(f.duty_time)
-                    flight_h, flight_m = _split_duration(f.flight_time)
-
-                    rows.append([
-                        date_str, dep, arr, f.trip_type,
-                        ex_sin_rpt, ex_sin_sta,
-                        ex_stn_rpt, ex_stn_sta,
-                        duty_h, duty_m, _decimal_hours(duty_h, duty_m),
-                        flight_h, flight_m, _decimal_hours(flight_h, flight_m)
-                    ])
+            # -----------------------------
+            # LAYOVER ROW
+            # -----------------------------
+            if e.duty_type == "LO":
+                rows.append(
+                    _make_sheet_row(
+                        date_str=date_str,
+                        dep="",
+                        arr=e.sector,
+                        trip_type="Layover",
+                    )
+                )
                 continue
 
-            if todays:
-                f = todays[0]
-                dep = f.origin or ""
-                arr = f.destination or ""
+            # Ignore standby rows for sheet
+            if e.duty_type == "STBY":
+                continue
 
-                ex_sin_rpt = _format_time(f.rpt) if dep == "SIN" else ""
-                if dep == "SIN":
-                    if not f.sta and f.rpt:
-                        # First row of overnight outbound
-                        ex_sin_sta = "-"
-                    else:
-                        ex_sin_sta = _format_time(f.sta)
-                elif arr == "SIN" and (not f.rpt and not f.std):
-                    # Second row of overnight inbound
-                    ex_sin_sta = "-"                        
+            if e.duty_type != "FLY":
+                continue
+
+            dep = e.origin or ""
+            arr = e.destination or ""
+
+            ex_sin_rpt = ""
+            ex_sin_sta = ""
+            ex_stn_rpt = ""
+            ex_stn_sta = ""
+
+            is_continuation = e.sta and not e.rpt and not e.std
+            is_outbound = dep == "SIN" or arr != "SIN"
+
+            # =====================================================
+            # CONTINUATION ROW
+            # =====================================================
+
+            if is_continuation:
+
+                continuation_is_outbound = arr != "SIN"
+
+                # outbound continuation
+                # SIN-FRA -> next day FRA arrival
+                if continuation_is_outbound:
+                    dep = ""
+                    arr = e.destination
+                    ex_sin_sta = _format_time(e.sta)
+
+                # inbound continuation
+                # FRA-SIN -> next day SIN arrival
                 else:
-                    ex_sin_sta = ""
+                    dep = e.origin
+                    arr = "SIN"
+                    ex_sin_sta = "-"
+                    ex_stn_sta = _format_time(e.sta)
 
-                ex_stn_rpt = _format_time(f.rpt) if arr == "SIN" else ""
-                ex_stn_sta = _format_time(f.sta) if arr == "SIN" else ""
+                rows.append(
+                    _make_sheet_row(
+                        date_str=date_str,
+                        dep=dep,
+                        arr=arr,
+                        trip_type=e.trip_type,
+                        ex_sin_sta=ex_sin_sta,
+                        ex_stn_sta=ex_stn_sta,
 
-                duty_h, duty_m = _split_duration(f.duty_time)
-                flight_h, flight_m = _split_duration(f.flight_time)
+                        # ONLY inbound continuation gets hours
+                        duty_time=e.duty_time if not continuation_is_outbound else "",
+                        flight_time=e.flight_time if not continuation_is_outbound else "",
+                    )
+                )
 
-                rows.append([
-                    date_str, dep, arr, f.trip_type,
-                    ex_sin_rpt, ex_sin_sta,
-                    ex_stn_rpt, ex_stn_sta,
-                    duty_h, duty_m, _decimal_hours(duty_h, duty_m),
-                    flight_h, flight_m, _decimal_hours(flight_h, flight_m)
-                ])
+                continue
+
+            # =====================================================
+            # NORMAL FLIGHT ROW
+            # =====================================================
+
+            # OUTBOUND FLIGHT
+            if is_outbound:
+
+                if e.rpt:
+                    ex_sin_rpt = _format_time(e.rpt)
+
+                if e.sta:
+                    ex_sin_sta = _format_time(e.sta)
+                else:
+                    ex_sin_sta = "-"
+
+            # INBOUND FLIGHT
             else:
-                # Pure layover day
-                rows.append([
-                    date_str, "", station, "Layover",
-                    "", "", "", "",
-                    "", "", 0.0,
-                    "", "", 0
-                ])
-        # --- Post process this trip ---
-        trip_rows = rows[trip_start_index:]
-        if not trip_rows:
+
+                # turnaround uses STD
+                if e.trip_type == "Turnaround":
+                    ex_stn_rpt = _format_time(e.std) if e.std else ""
+
+                else:
+                    ex_stn_rpt = _format_time(e.rpt) if e.rpt else ""
+
+                if e.sta:
+                    ex_stn_sta = _format_time(e.sta)
+
+
+            # =====================================================
+            # HOURS OWNERSHIP
+            # =====================================================
+
+            should_put_hours = True
+
+            # if arr == "SIN" and not e.sta:
+            #     # inbound overnight first row
+            #     should_put_hours = False
+
+            # outbound flights own hours on FIRST row
+            if ex_sin_rpt == "" and ex_sin_sta != "" and ex_stn_rpt == "" and ex_stn_sta == "":
+                should_put_hours = False
+            # inbound overnight flights own hours on LAST row
+            if ex_sin_rpt == "" and ex_sin_sta == "" and ex_stn_rpt != "" and ex_stn_sta == "":
+                should_put_hours = False
+
+            rows.append(
+                _make_sheet_row(
+                    date_str=date_str,
+                    dep=dep,
+                    arr=arr,
+                    trip_type=e.trip_type,
+                    ex_sin_rpt=ex_sin_rpt,
+                    ex_sin_sta=ex_sin_sta,
+                    ex_stn_rpt=ex_stn_rpt,
+                    ex_stn_sta=ex_stn_sta,
+
+                    duty_time=e.duty_time if should_put_hours else "",
+                    flight_time=e.flight_time if should_put_hours else "",
+                )
+            )
+
+    # =====================================================
+    # REMOVE DUPLICATE PURE LAYOVER ROWS
+    # Keep flight/continuation rows over empty layovers
+    # =====================================================
+
+    grouped = {}
+
+    for row in rows:
+        grouped.setdefault(row[0], []).append(row)
+
+    final_rows = []
+
+    for date, day_rows in grouped.items():
+
+        # if there are flight/continuation rows,
+        # remove empty layover placeholders
+        has_non_empty = any(
+            not _is_empty_layover_row(r)
+            for r in day_rows
+        )
+
+        if has_non_empty:
+            day_rows = [
+                r for r in day_rows
+                if not _is_empty_layover_row(r)
+            ]
+
+        final_rows.extend(day_rows)
+        
+    deduped = []
+    seen = set()
+
+    for row in final_rows:
+        key = tuple(row)
+
+        if key in seen:
             continue
 
-        first_row = next(r for r in trip_rows if r[1] == fly[0].origin)
-        last_row = next(r for r in reversed(trip_rows) if r[2] == fly[-1].destination)
+        seen.add(key)
+        deduped.append(row)
 
-        # 1) Clear duty & flight times for ALL rows
-        for r in trip_rows:
-            r[8] = ""
-            r[9] = ""
-            r[10] = ""
-            r[11] = ""
-            r[12] = ""
-            r[13] = ""
+    return deduped
 
-        # 2) Restore duty/flight only for first and last row
-        first_flight = fly[0]
-        last_flight = fly[-1]
-
-        duty_h, duty_m = _split_duration(first_flight.duty_time)
-        flight_h, flight_m = _split_duration(first_flight.flight_time)
-
-        first_row[8] = duty_h
-        first_row[9] = duty_m
-        first_row[10] = _decimal_hours(duty_h, duty_m)
-        first_row[11] = flight_h
-        first_row[12] = flight_m
-        first_row[13] = _decimal_hours(flight_h, flight_m)
-
-        duty_h, duty_m = _split_duration(last_flight.duty_time)
-        flight_h, flight_m = _split_duration(last_flight.flight_time)
-
-        last_row[8] = duty_h
-        last_row[9] = duty_m
-        last_row[10] = _decimal_hours(duty_h, duty_m)
-        last_row[11] = flight_h
-        last_row[12] = flight_m
-        last_row[13] = _decimal_hours(flight_h, flight_m)
-
-        if not is_turnaround_trip and len(trip_rows) > 2 :
-            # 3) Middle rows: only keep ARR as station country
-            for r in trip_rows[1:-1]:
-                r[1] = ""  # clear dep
-                r[2] = first_row[2]  # keep arr
-
-    return rows
+    # return final_rows
 
 
 # Availability Mode Functions
