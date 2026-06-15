@@ -483,7 +483,7 @@ def trips_to_sheet_rows(entries: List[FlightRow]) -> list[list]:
         if trip[0].duty_type.startswith("SS"):
             continue
 
-        for e in trip:
+        for idx, e in enumerate(trip):
 
             date_str = _parse_date_str(e.start_date).strftime("%m/%d/%Y")
 
@@ -519,6 +519,25 @@ def trips_to_sheet_rows(entries: List[FlightRow]) -> list[list]:
             is_continuation = e.sta and not e.rpt and not e.std
             is_outbound = dep == "SIN" or arr != "SIN"
 
+            # Determine if we should put hours on this row
+            should_put_hours = False
+            is_intermediate_flight_row = False
+            if e.duty_type == "FLY":
+                leg_indices = [
+                    i for i, other in enumerate(trip)
+                    if other.duty_type == "FLY"
+                    and other.flight_number == e.flight_number
+                    and other.sector == e.sector
+                ]
+                is_outbound = (e.origin == "SIN" or e.destination != "SIN")
+                if is_outbound:
+                    should_put_hours = (idx == leg_indices[0])
+                else:
+                    should_put_hours = (idx == leg_indices[-1])
+
+                if len(leg_indices) > 2:
+                    is_intermediate_flight_row = leg_indices[0] < idx < leg_indices[-1]
+
             # =====================================================
             # CONTINUATION ROW
             # =====================================================
@@ -551,9 +570,9 @@ def trips_to_sheet_rows(entries: List[FlightRow]) -> list[list]:
                         ex_sin_sta=ex_sin_sta,
                         ex_stn_sta=ex_stn_sta,
 
-                        # ONLY inbound continuation gets hours
-                        duty_time=e.duty_time if not continuation_is_outbound else "",
-                        flight_time=e.flight_time if not continuation_is_outbound else "",
+                        # Log hours only on the designated row of the flight leg
+                        duty_time=e.duty_time if should_put_hours else "",
+                        flight_time=e.flight_time if should_put_hours else "",
                     )
                 )
 
@@ -566,44 +585,39 @@ def trips_to_sheet_rows(entries: List[FlightRow]) -> list[list]:
             # OUTBOUND FLIGHT
             if is_outbound:
 
-                if e.rpt:
-                    ex_sin_rpt = _format_time(e.rpt)
-
-                if e.sta:
-                    ex_sin_sta = _format_time(e.sta)
-                else:
+                if is_intermediate_flight_row:
                     ex_sin_sta = "-"
+                    ex_sin_rpt = "-"
+                else:
+                    if e.rpt:
+                        ex_sin_rpt = _format_time(e.rpt)
+
+                    if e.sta:
+                        ex_sin_sta = _format_time(e.sta)
+                    else:
+                        ex_sin_sta = "-"
 
             # INBOUND FLIGHT
             else:
 
-                # turnaround uses STD
-                if e.trip_type == "Turnaround":
-                    ex_stn_rpt = _format_time(e.std) if e.std else ""
-
+                if is_intermediate_flight_row:
+                    ex_sin_sta = "-"
+                    ex_stn_rpt = "-"
                 else:
-                    ex_stn_rpt = _format_time(e.rpt) if e.rpt else ""
+                    # turnaround uses STD
+                    if e.trip_type == "Turnaround":
+                        ex_stn_rpt = _format_time(e.std) if e.std else ""
 
-                if e.sta:
-                    ex_stn_sta = _format_time(e.sta)
+                    else:
+                        ex_stn_rpt = _format_time(e.rpt) if e.rpt else ""
+
+                    if e.sta:
+                        ex_stn_sta = _format_time(e.sta)
 
 
             # =====================================================
             # HOURS OWNERSHIP
             # =====================================================
-
-            should_put_hours = True
-
-            # if arr == "SIN" and not e.sta:
-            #     # inbound overnight first row
-            #     should_put_hours = False
-
-            # outbound flights own hours on FIRST row
-            if ex_sin_rpt == "" and ex_sin_sta != "" and ex_stn_rpt == "" and ex_stn_sta == "":
-                should_put_hours = False
-            # inbound overnight flights own hours on LAST row
-            if ex_sin_rpt == "" and ex_sin_sta == "" and ex_stn_rpt != "" and ex_stn_sta == "":
-                should_put_hours = False
 
             rows.append(
                 _make_sheet_row(

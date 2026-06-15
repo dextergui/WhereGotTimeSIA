@@ -6,7 +6,7 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 from app import service, models
 
-TESTS = {"nov25", "dec25", "mar26", "apr26Brandon", "apr26Bing", "jun26Bing"}
+TESTS = {"nov25", "dec25", "mar26", "apr26Brandon", "apr26Bing", "jun26Bing", "jul26"}
 
 def entries_to_string(entries: list[models.FlightRow]) -> str:
     lines = []
