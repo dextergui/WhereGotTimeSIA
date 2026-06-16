@@ -1,5 +1,6 @@
 from ..state import get, update, clear
-from .. import telegram_bot, service
+from .. import telegram_bot
+from app.services.availability import validate_extracted_block, find_common_locations
 
 
 def start(chat_id):
@@ -27,7 +28,7 @@ def handle(chat_id, text):
         expected_month = state["data"].get("month")
         expected_year = state["data"].get("year")
 
-        ok, result = service.validate_extracted_block(
+        ok, result = validate_extracted_block(
             text,
             expected_month,
             expected_year
@@ -84,7 +85,7 @@ def callback(chat_id, data):
         month = state["data"]["month"]
         year = state["data"]["year"]
 
-        result = service.find_common_locations(
+        result = find_common_locations(
             people,
             month,
             year

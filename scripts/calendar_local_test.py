@@ -22,7 +22,8 @@ sys.path.insert(0, str(ROOT))
 from dotenv import load_dotenv
 load_dotenv()
 
-from app import ocr, service, calendar
+from app import ocr, calendar
+from app.services.timesheet_parser import parse_timesheet, group_trips
 
 
 def main():
@@ -46,9 +47,9 @@ def main():
             extracted_text = ocr.extract_text_from_file(f.read(), args.file)
 
     # --- Parse ---
-    parsed = service.parse_timesheet(extracted_text)
+    parsed = parse_timesheet(extracted_text)
     entries = parsed["entries"]
-    trips = service.group_trips(entries)
+    trips = group_trips(entries)
 
     print("\n=== TRIPS DETECTED ===")
 

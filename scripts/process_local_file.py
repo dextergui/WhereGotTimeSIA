@@ -21,7 +21,10 @@ from scripts.run_tests import entries_to_string
 from dotenv import load_dotenv
 load_dotenv()
 
-from app import ocr, sheets, service, models
+from app import ocr, sheets, models
+from app.services.timesheet_parser import parse_timesheet, group_trips
+from app.services.message_formatter import trips_to_message
+from app.services.sheets_mapper import trips_to_sheet_rows
 
 def main():
     p = argparse.ArgumentParser()
@@ -52,7 +55,7 @@ def main():
     print(extracted_text)
     print("====================")
 
-    parsed = service.parse_timesheet(extracted_text)
+    parsed = parse_timesheet(extracted_text)
     entries_str = entries_to_string(parsed["entries"])
     print("--- Parsed entries ---")
     print(entries_str)
@@ -63,15 +66,15 @@ def main():
             f.write(entries_str)
         print(f"Snapshot of extracted entries saved to {args.snapshot_entries}")
 
-    # trips = service.group_trips(parsed["entries"])
+    # trips = group_trips(parsed["entries"])
 
-    reply = service.trips_to_message(parsed["entries"])
+    reply = trips_to_message(parsed["entries"])
     if args.snapshot_reply:
         with open(args.snapshot_reply, "w", encoding="utf-8") as f:
             f.write(reply)
         print(f"Snapshot of reply message saved to {args.snapshot_reply}")
 
-    row = service.trips_to_sheet_rows(parsed["entries"])
+    row = trips_to_sheet_rows(parsed["entries"])
     if args.snapshot_row:
         with open(args.snapshot_row, "w", encoding="utf-8") as f:
             for i, v in enumerate(row, 1):

@@ -4,7 +4,10 @@ import sys
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
-from app import service, models
+from app import models
+from app.services.timesheet_parser import parse_timesheet
+from app.services.message_formatter import trips_to_message
+from app.services.sheets_mapper import trips_to_sheet_rows
 
 TESTS = {"nov25", "dec25", "mar26", "apr26Brandon", "apr26Bing", "jun26Bing", "jul26"}
 
@@ -30,7 +33,7 @@ def test_entries_snapshot(filename: str):
     raw_text = raw_path.read_text(encoding="utf-8")
     expected = expected_path.read_text(encoding="utf-8").strip()
 
-    result = service.parse_timesheet(raw_text)
+    result = parse_timesheet(raw_text)
     actual = entries_to_string(result["entries"]).strip()
 
     if actual != expected:
@@ -65,8 +68,8 @@ def test_reply_snapshot(filename: str):
     raw_text = raw_path.read_text(encoding="utf-8")
     expected = expected_path.read_text(encoding="utf-8").strip()
 
-    result = service.parse_timesheet(raw_text)
-    actual = service.trips_to_message(result["entries"]).strip()
+    result = parse_timesheet(raw_text)
+    actual = trips_to_message(result["entries"]).strip()
 
     if actual != expected:
         diff = "\n".join(
@@ -100,8 +103,8 @@ def test_sheet_row_snapshot(filename: str):
     raw_text = raw_path.read_text(encoding="utf-8")
     expected = expected_path.read_text(encoding="utf-8").strip().splitlines()
 
-    result = service.parse_timesheet(raw_text)
-    actual_rows = service.trips_to_sheet_rows(result["entries"])
+    result = parse_timesheet(raw_text)
+    actual_rows = trips_to_sheet_rows(result["entries"])
     actual = [f"{i}: {v}" for i, v in enumerate(actual_rows, 1)]
 
     if actual != expected:

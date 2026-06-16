@@ -4,5 +4,6 @@
 .vscode/
 wheregottimesia-c0d12748b398.json
 */__pycache__/
+*/*/__pycache__/
 app/handlers/__pycache__
 tests/

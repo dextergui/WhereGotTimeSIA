@@ -13,13 +13,17 @@ The project has been reorganized into the following folder structure:
 │   ├── handlers/               # Command-specific message handlers
 │   │   ├── availability_handler.py  # Logic for finding common crew availability (/availability)
 │   │   └── parse_handler.py         # Logic for processing/confirming timesheets (/extract)
+│   ├── services/               # Modular business logic services
+│   │   ├── availability.py     # Multi-crew availability finder and overlap timelines
+│   │   ├── message_formatter.py # Logic for rendering parsed schedule into Telegram messages
+│   │   ├── sheets_mapper.py    # Logic for mapping parsed flight rows to Google Sheets rows
+│   │   └── timesheet_parser.py # Core parser and trip grouping/categorization logic
 │   ├── calendar.py             # Google Calendar integration (event creation)
 │   ├── config.py               # Environment configuration and credentials decoding
 │   ├── main.py                 # FastAPI application and webhook entrypoint
 │   ├── models.py               # Data structures (e.g., FlightRow dataclass)
 │   ├── ocr.py                  # Google Cloud Vision OCR integration
 │   ├── router.py               # Main router for incoming Telegram messages & callbacks
-│   ├── service.py              # Core timesheet parsing and location comparison logic
 │   ├── sheets.py               # Google Sheets API helper (gspread)
 │   ├── state.py                # In-memory session state management
 │   └── telegram_bot.py         # Telegram Bot API requests helper
