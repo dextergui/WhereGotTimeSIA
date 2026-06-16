@@ -7,3 +7,4 @@ wheregottimesia-c0d12748b398.json
 */*/__pycache__/
 app/handlers/__pycache__
 tests/
+app/user_timings_config.json

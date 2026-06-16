@@ -1,5 +1,5 @@
 from .state import get, set, clear, PENDING_UPLOADS
-from .handlers import parse_handler, availability_handler
+from .handlers import parse_handler, availability_handler, timings_handler
 from app import telegram_bot
 
 INSTRUCTION_TEXT = """
@@ -8,6 +8,7 @@ INSTRUCTION_TEXT = """
 /health → Check the status of the bot  
 /extract → Send image to extract trips  
 /availability → Find common availability between crews
+/timings → Calculate reporting timeline and bedtime
 
 /cancel → Cancel current mode
 You can use the commands anytime.
@@ -32,6 +33,10 @@ def route_message(chat_id, text, msg):
         })
         return availability_handler.start(chat_id)
 
+    if text == "/timings":
+        set(chat_id, {"mode": "timings", "step": "menu"})
+        return timings_handler.start(chat_id)
+
     if text == "/cancel":
         clear(chat_id)
         PENDING_UPLOADS.pop(chat_id, None)
@@ -54,6 +59,9 @@ def route_message(chat_id, text, msg):
 
     if state["mode"] == "availability":
         return availability_handler.handle(chat_id, text)
+
+    if state["mode"] == "timings":
+        return timings_handler.handle(chat_id, text)
     
 def route_callback(chat_id, data):
 
@@ -67,3 +75,6 @@ def route_callback(chat_id, data):
 
     if data in ("ADD_MORE", "START_SEARCH"):
         return availability_handler.callback(chat_id, data)
+
+    if data.startswith("TIMINGS_"):
+        return timings_handler.callback(chat_id, data)
