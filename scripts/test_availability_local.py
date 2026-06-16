@@ -14,7 +14,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from app import service
+from app.services.availability import find_common_locations, validate_extracted_block
 
 
 def run_test_case(title, people, month, year):
@@ -22,7 +22,7 @@ def run_test_case(title, people, month, year):
     print("TEST:", title)
     print("==============================")
 
-    result = service.find_common_locations(
+    result = find_common_locations(
         people,
         month,
         year
@@ -55,7 +55,7 @@ Flights for MARCH 2026:
 
 
 def build_person(name, text):
-    ok, result = service.validate_extracted_block(text)
+    ok, result = validate_extracted_block(text)
 
     if not ok:
         raise Exception(result)

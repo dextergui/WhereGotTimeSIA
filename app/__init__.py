@@ -5,7 +5,6 @@ __all__ = [
     "telegram_bot",
     "ocr",
     "sheets",
-    "service",
     "models",
     "calendar"
 ]

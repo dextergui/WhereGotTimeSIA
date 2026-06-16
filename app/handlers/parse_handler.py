@@ -1,4 +1,7 @@
-from .. import telegram_bot, ocr, service, sheets, config, calendar
+from .. import telegram_bot, ocr, sheets, config, calendar
+from app.services.timesheet_parser import parse_timesheet, group_trips
+from app.services.message_formatter import trips_to_message
+from app.services.sheets_mapper import trips_to_sheet_rows
 from ..state import update, PENDING_UPLOADS, PENDING_CALENDAR
 
 
@@ -39,13 +42,13 @@ def handle(chat_id, msg):
 
     try:
         extracted = ocr.extract_text_from_file(file_bytes, filename)
-        parsed = service.parse_timesheet(extracted)
+        parsed = parse_timesheet(extracted)
     except Exception:
         telegram_bot.send_message(chat_id, "🤖 Extraction Mode\n=> Image processing failed. Please try again.")
         return
 
-    reply_text = service.trips_to_message(parsed["entries"])
-    sheet_rows = service.trips_to_sheet_rows(parsed["entries"])
+    reply_text = trips_to_message(parsed["entries"])
+    sheet_rows = trips_to_sheet_rows(parsed["entries"])
 
     telegram_bot.send_message(chat_id, reply_text)
 
@@ -55,7 +58,7 @@ def handle(chat_id, msg):
     PENDING_UPLOADS.pop(chat_id, None)
     PENDING_CALENDAR.pop(chat_id, None)
     PENDING_UPLOADS[chat_id] = sheet_rows
-    PENDING_CALENDAR[chat_id] = service.group_trips(parsed["entries"])
+    PENDING_CALENDAR[chat_id] = group_trips(parsed["entries"])
 
     keyboard = {
         "inline_keyboard": [[
